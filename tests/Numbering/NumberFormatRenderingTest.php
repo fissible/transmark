@@ -6,7 +6,6 @@ namespace Fissible\Transmark\Tests\Numbering;
 
 use Fissible\Transmark\Document;
 use Fissible\Transmark\Nodes\Block\Paragraph;
-use Fissible\Transmark\Nodes\Inline\Text;
 use Fissible\Transmark\Numbering\AbstractNum;
 use Fissible\Transmark\Numbering\Level;
 use Fissible\Transmark\Numbering\Num;
@@ -14,6 +13,7 @@ use Fissible\Transmark\Numbering\NumberFormat;
 use Fissible\Transmark\Numbering\NumberingDefinitions;
 use Fissible\Transmark\Numbering\NumberingEngine;
 use Fissible\Transmark\Numbering\NumberingRef;
+use Fissible\Transmark\Tests\Support\NumberingFixture;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -117,15 +117,9 @@ final class NumberFormatRenderingTest extends TestCase
 
     public function test_legal_outline_fixture_resolves_to_documented_labels(): void
     {
-        [$document, $paragraphs] = $this->legalOutlineFixture();
-
-        $labels = (new NumberingEngine())->resolve($document);
-        $actual = [];
-        foreach ($paragraphs as $text => $paragraph) {
-            $actual[$text] = $labels->labelFor($paragraph);
-        }
-
-        self::assertSame([
+        $fixture = NumberingFixture::load('legal-outline');
+        $labels = (new NumberingEngine())->resolve($fixture->document());
+        $expected = [
             'Definitions' => '1.',
             'Term of Agreement' => '2.',
             'Initial Term' => '2.1.',
@@ -133,7 +127,11 @@ final class NumberFormatRenderingTest extends TestCase
             'Automatic renewal' => '2.2.1.',
             'Written notice' => '2.2.1.1.',
             'Termination' => '3.',
-        ], $actual);
+        ];
+
+        foreach ($expected as $text => $expectedLabel) {
+            self::assertSame($expectedLabel, $labels->labelFor($fixture->paragraph($text)), $text);
+        }
     }
 
     /**
@@ -191,102 +189,6 @@ final class NumberFormatRenderingTest extends TestCase
         yield '944' => [944, 'cmxliv', 'CMXLIV'];
         yield '1994' => [1994, 'mcmxciv', 'MCMXCIV'];
         yield '3999' => [3999, 'mmmcmxcix', 'MMMCMXCIX'];
-    }
-
-    /**
-     * @return array{Document, array<string, Paragraph>}
-     */
-    private function legalOutlineFixture(): array
-    {
-        $namespace = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
-        $fixturePath = __DIR__.'/../fixtures/numbering/legal-outline';
-
-        $numberingDom = new \DOMDocument();
-        self::assertTrue($numberingDom->load($fixturePath.'/numbering.xml'));
-
-        $abstractNums = [];
-        foreach ($numberingDom->getElementsByTagNameNS($namespace, 'abstractNum') as $abstractNumElement) {
-            self::assertInstanceOf(\DOMElement::class, $abstractNumElement);
-
-            $abstractNumId = (int) $abstractNumElement->getAttributeNS($namespace, 'abstractNumId');
-            $levels = [];
-            foreach ($abstractNumElement->getElementsByTagNameNS($namespace, 'lvl') as $levelElement) {
-                self::assertInstanceOf(\DOMElement::class, $levelElement);
-
-                $ilvl = (int) $levelElement->getAttributeNS($namespace, 'ilvl');
-                $start = 1;
-                $format = NumberFormat::Decimal;
-                $lvlText = '';
-                $isLegal = false;
-
-                foreach ($levelElement->childNodes as $child) {
-                    if (!$child instanceof \DOMElement) {
-                        continue;
-                    }
-
-                    match ($child->localName) {
-                        'start' => $start = (int) $child->getAttributeNS($namespace, 'val'),
-                        'numFmt' => $format = NumberFormat::from($child->getAttributeNS($namespace, 'val')),
-                        'lvlText' => $lvlText = $child->getAttributeNS($namespace, 'val'),
-                        'isLgl' => $isLegal = true,
-                        default => null,
-                    };
-                }
-
-                $levels[$ilvl] = new Level($ilvl, $format, $lvlText, $start, $isLegal);
-            }
-
-            $abstractNums[$abstractNumId] = new AbstractNum($abstractNumId, $levels);
-        }
-
-        $nums = [];
-        foreach ($numberingDom->getElementsByTagNameNS($namespace, 'num') as $numElement) {
-            self::assertInstanceOf(\DOMElement::class, $numElement);
-
-            $abstractNumIdElement = $numElement->getElementsByTagNameNS($namespace, 'abstractNumId')->item(0);
-            self::assertInstanceOf(\DOMElement::class, $abstractNumIdElement);
-
-            $numId = (int) $numElement->getAttributeNS($namespace, 'numId');
-            $abstractNumId = (int) $abstractNumIdElement->getAttributeNS($namespace, 'val');
-            $nums[$numId] = new Num($numId, $abstractNumId);
-        }
-
-        $documentDom = new \DOMDocument();
-        self::assertTrue($documentDom->load($fixturePath.'/document.xml'));
-
-        $content = [];
-        $paragraphs = [];
-        foreach ($documentDom->getElementsByTagNameNS($namespace, 'p') as $paragraphElement) {
-            self::assertInstanceOf(\DOMElement::class, $paragraphElement);
-
-            $numPr = $paragraphElement->getElementsByTagNameNS($namespace, 'numPr')->item(0);
-            self::assertInstanceOf(\DOMElement::class, $numPr);
-
-            $ilvlElement = $numPr->getElementsByTagNameNS($namespace, 'ilvl')->item(0);
-            $numIdElement = $numPr->getElementsByTagNameNS($namespace, 'numId')->item(0);
-            self::assertInstanceOf(\DOMElement::class, $ilvlElement);
-            self::assertInstanceOf(\DOMElement::class, $numIdElement);
-
-            $text = '';
-            foreach ($paragraphElement->getElementsByTagNameNS($namespace, 't') as $textElement) {
-                $text .= $textElement->textContent;
-            }
-
-            $paragraph = new Paragraph(
-                [new Text($text)],
-                numbering: new NumberingRef(
-                    (int) $numIdElement->getAttributeNS($namespace, 'val'),
-                    (int) $ilvlElement->getAttributeNS($namespace, 'val'),
-                ),
-            );
-            $content[] = $paragraph;
-            $paragraphs[$text] = $paragraph;
-        }
-
-        return [
-            new Document($content, new NumberingDefinitions($abstractNums, $nums)),
-            $paragraphs,
-        ];
     }
 
     private function numberedParagraph(int $numId, int $ilvl): Paragraph
