@@ -38,4 +38,38 @@ final class OoxmlPackage
 
         return new self($zip, $path);
     }
+
+    public function rawPart(string $partPath): ?string
+    {
+        $contents = $this->zip->getFromName($partPath);
+
+        return $contents === false ? null : $contents;
+    }
+
+    public function part(string $partPath): ?\DOMDocument
+    {
+        $xml = $this->rawPart($partPath);
+
+        if ($xml === null) {
+            return null;
+        }
+
+        $dom = new \DOMDocument();
+        $dom->preserveWhiteSpace = true;
+
+        $previous = libxml_use_internal_errors(true);
+        $loaded = $dom->loadXML($xml);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+
+        if ($loaded === false) {
+            throw new InvalidPackageException(sprintf(
+                'Part "%s" in "%s" is not well-formed XML.',
+                $partPath,
+                $this->path,
+            ));
+        }
+
+        return $dom;
+    }
 }

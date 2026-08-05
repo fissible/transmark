@@ -67,4 +67,55 @@ final class OoxmlPackageTest extends TestCase
 
         self::assertInstanceOf(OoxmlPackage::class, $package);
     }
+
+    public function test_raw_part_returns_null_for_a_missing_part_path(): void
+    {
+        $path = $this->writeZipFixture(['word/document.xml' => '<w:document/>']);
+        $package = OoxmlPackage::open($path);
+
+        self::assertNull($package->rawPart('word/numbering.xml'));
+    }
+
+    public function test_raw_part_returns_the_exact_bytes_of_an_existing_part(): void
+    {
+        $path = $this->writeZipFixture(['word/document.xml' => '<w:document>hello</w:document>']);
+        $package = OoxmlPackage::open($path);
+
+        self::assertSame('<w:document>hello</w:document>', $package->rawPart('word/document.xml'));
+    }
+
+    public function test_part_returns_null_for_a_missing_part_path(): void
+    {
+        $path = $this->writeZipFixture(['word/document.xml' => '<w:document/>']);
+        $package = OoxmlPackage::open($path);
+
+        self::assertNull($package->part('word/numbering.xml'));
+    }
+
+    public function test_part_throws_for_a_malformed_xml_part(): void
+    {
+        $path = $this->writeZipFixture(['word/document.xml' => '<w:document>not closed']);
+        $package = OoxmlPackage::open($path);
+
+        $this->expectException(InvalidPackageException::class);
+
+        $package->part('word/document.xml');
+    }
+
+    public function test_part_returns_a_dom_document_with_working_namespace_queries(): void
+    {
+        $numberingXml = file_get_contents(
+            __DIR__.'/../fixtures/numbering/legal-outline/numbering.xml',
+        );
+        $path = $this->writeZipFixture(['word/numbering.xml' => $numberingXml]);
+        $package = OoxmlPackage::open($path);
+
+        $dom = $package->part('word/numbering.xml');
+        $ns = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
+        self::assertNotNull($dom);
+        $abstractNums = $dom->getElementsByTagNameNS($ns, 'abstractNum');
+        self::assertSame(1, $abstractNums->length);
+        self::assertSame('0', $abstractNums->item(0)->getAttributeNS($ns, 'abstractNumId'));
+    }
 }
