@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  Hand-crafted "true legal outline" fixture — pandoc cannot generate this
+  pattern (see legal-outline.md spike: pandoc always emits one numId per
+  nesting depth with single-placeholder lvlText). This fixture models what
+  a real Word "legal numbering" multilevel list template produces: ONE
+  abstractNum spans all 4 depths, lvlText concatenates ancestor
+  placeholders, and w:isLgl forces decimal rendering on levels whose
+  numFmt is NOT decimal (lvl 2 = lowerLetter, lvl 3 = lowerRoman, but both
+  render as arabic numerals because of isLgl).
+-->
+<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:abstractNum w:abstractNumId="0">
+    <w:multiLevelType w:val="multilevel"/>
+    <w:lvl w:ilvl="0">
+      <w:start w:val="1"/>
+      <w:numFmt w:val="decimal"/>
+      <w:suff w:val="tab"/>
+      <w:lvlText w:val="%1."/>
+      <w:lvlJc w:val="left"/>
+    </w:lvl>
+    <w:lvl w:ilvl="1">
+      <w:start w:val="1"/>
+      <w:numFmt w:val="decimal"/>
+      <w:suff w:val="tab"/>
+      <w:lvlText w:val="%1.%2."/>
+      <w:lvlJc w:val="left"/>
+    </w:lvl>
+    <w:lvl w:ilvl="2">
+      <w:start w:val="1"/>
+      <w:numFmt w:val="lowerLetter"/>
+      <w:isLgl/>
+      <w:suff w:val="tab"/>
+      <w:lvlText w:val="%1.%2.%3."/>
+      <w:lvlJc w:val="left"/>
+    </w:lvl>
+    <w:lvl w:ilvl="3">
+      <w:start w:val="1"/>
+      <w:numFmt w:val="lowerRoman"/>
+      <w:isLgl/>
+      <w:suff w:val="tab"/>
+      <w:lvlText w:val="%1.%2.%3.%4."/>
+      <w:lvlJc w:val="left"/>
+    </w:lvl>
+  </w:abstractNum>
+  <w:num w:numId="2000">
+    <w:abstractNumId w:val="0"/>
+  </w:num>
+</w:numbering>

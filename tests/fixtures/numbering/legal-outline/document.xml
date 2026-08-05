@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  Single numId (2000) referenced across every nesting depth via w:ilvl —
+  this is the structural signature that distinguishes a true legal outline
+  from pandoc's simple-list pattern (which uses a DIFFERENT numId per depth).
+  Paragraph order below intentionally exercises: sibling increment (1., 2.),
+  descent with reset (2.1.), sibling increment at depth (2.1., 2.2.),
+  descent two levels (2.2.1.), descent again (2.2.1.1.), then ascent back
+  to depth 1 (3.) which must reset all deeper counters.
+-->
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="2000"/></w:numPr></w:pPr>
+      <w:r><w:t>Definitions</w:t></w:r></w:p>
+    <w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="2000"/></w:numPr></w:pPr>
+      <w:r><w:t>Term of Agreement</w:t></w:r></w:p>
+    <w:p><w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="2000"/></w:numPr></w:pPr>
+      <w:r><w:t>Initial Term</w:t></w:r></w:p>
+    <w:p><w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="2000"/></w:numPr></w:pPr>
+      <w:r><w:t>Renewal</w:t></w:r></w:p>
+    <w:p><w:pPr><w:numPr><w:ilvl w:val="2"/><w:numId w:val="2000"/></w:numPr></w:pPr>
+      <w:r><w:t>Automatic renewal</w:t></w:r></w:p>
+    <w:p><w:pPr><w:numPr><w:ilvl w:val="3"/><w:numId w:val="2000"/></w:numPr></w:pPr>
+      <w:r><w:t>Written notice</w:t></w:r></w:p>
+    <w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="2000"/></w:numPr></w:pPr>
+      <w:r><w:t>Termination</w:t></w:r></w:p>
+  </w:body>
+</w:document>
