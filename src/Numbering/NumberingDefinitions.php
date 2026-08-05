@@ -46,7 +46,7 @@ final class NumberingDefinitions
     public function withAbstractNum(AbstractNum $abstractNum): self
     {
         return new self(
-            [...$this->abstractNums, $abstractNum->id() => $abstractNum],
+            array_replace($this->abstractNums, [$abstractNum->id() => $abstractNum]),
             $this->nums,
         );
     }
@@ -55,7 +55,7 @@ final class NumberingDefinitions
     {
         return new self(
             $this->abstractNums,
-            [...$this->nums, $num->numId() => $num],
+            array_replace($this->nums, [$num->numId() => $num]),
         );
     }
 }
