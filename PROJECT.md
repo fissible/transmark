@@ -75,36 +75,48 @@ get its own TDD implementation plan (`superpowers:writing-plans` +
 `superpowers:subagent-driven-development` or `executing-plans`) when started
 — this roadmap only sequences them.
 
-| # | Task | Effort | Depends on | Status |
-|---|------|--------|------------|--------|
-| 1 | `NumberingEngine`: resolve `Document` → `NumberingLabelMap` (counter state per numId, level reset/restart rules, `lvlText` templating, legal vs. bullet formats) | L | Numbering data model (done) | Not started |
-| 2 | `DocxReader`: unzip OOXML, parse `word/document.xml` → `Block`/`Inline` tree, parse `word/numbering.xml` → `NumberingDefinitions` | XL | `NumberingEngine` (to validate against real docs) | Not started |
-| 3 | `MarkdownReader`: CommonMark-subset parser → tree (using `ListNode`/`ListItem`, not `NumberingRef`) | L | Node taxonomy (done) | Not started |
-| 4 | `HtmlWriter`: tree → HTML, two label strategies (semantic `<ol>` nesting for simple lists; flat elements + rendered label text for legal-outline paragraphs) | L | `NumberingEngine` | Not started |
-| 5 | `MarkdownWriter`: tree → Markdown | M | Node taxonomy (done) | Not started |
-| 6 | Semantic-idempotence test harness: generate/hand-write ASTs, round-trip through each reader/writer pair, assert tree equality | M | Tasks 2–5 | Not started |
-| 7 | `fissible/transmark-blade` (separate package): Blade adapter consuming this package's `Document`/writers | M | Task 4 | Not started |
-| 8 | `fissible/transmark-xlsx` (separate package): xlsx reader/writer sharing the OOXML/zip layer from Task 2 | XL | Task 2 | Not started |
+| # | Task | Effort | Depends on | Issue | Status |
+|---|------|--------|------------|-------|--------|
+| 1a | `NumberingEngine` core resolution loop (counter state per numId) | M | Numbering data model (done) | [#1](https://github.com/fissible/transmark/issues/1) | Not started |
+| 1b | `lvlText` templating and `NumberFormat` rendering | M | 1a | [#2](https://github.com/fissible/transmark/issues/2) | Not started |
+| 1c | Level restart and override rules | S | 1a, 1b | [#3](https://github.com/fissible/transmark/issues/3) | Not started |
+| 1d | NumberingEngine test suite: legal outlines, restarts, overrides | S | 1a–1c | [#4](https://github.com/fissible/transmark/issues/4) | Not started |
+| 2a | Shared OOXML/zip extraction layer (docx + future xlsx) | S | none | [#5](https://github.com/fissible/transmark/issues/5) | Not started |
+| 2b | `DocxReader`: `word/document.xml` → `Block`/`Inline` tree | XL | 2a | [#6](https://github.com/fissible/transmark/issues/6) | Not started |
+| 2c | `DocxReader`: `word/numbering.xml` → `NumberingDefinitions` | L | 2a | [#7](https://github.com/fissible/transmark/issues/7) | Not started |
+| 3 | `MarkdownReader`: CommonMark-subset parser → tree (`ListNode`/`ListItem`, not `NumberingRef`) | L | Node taxonomy (done) | [#8](https://github.com/fissible/transmark/issues/8) | Not started |
+| 4a | `HtmlWriter`: semantic `<ol>` nesting for simple lists | M | none | [#9](https://github.com/fissible/transmark/issues/9) | Not started |
+| 4b | `HtmlWriter`: flat + rendered-label strategy for legal outlines | M | 1a–1c | [#10](https://github.com/fissible/transmark/issues/10) | Not started |
+| 5 | `MarkdownWriter`: tree → Markdown | M | Task 3 (node coverage) | [#11](https://github.com/fissible/transmark/issues/11) | Not started |
+| 6 | Semantic-idempotence test harness: generate/hand-write ASTs, round-trip through each reader/writer pair, assert tree equality | M | Tasks 3, 5 (minimum) | [#12](https://github.com/fissible/transmark/issues/12) | Not started |
+| 7 | `fissible/transmark-blade` (separate package): Blade adapter consuming this package's `Document`/writers | M | Tasks 4a–4b | [#13](https://github.com/fissible/transmark/issues/13) | Not started |
+| 8 | `fissible/transmark-xlsx` (separate package): xlsx reader/writer sharing the OOXML/zip layer | XL | Task 2a | [#14](https://github.com/fissible/transmark/issues/14) | Not started |
 
 ## Session handoff notes
 
 **Completed (2026-08-04):** Package skeleton — `composer.json` (PSR-4
 `Fissible\Transmark\` → `src/`, PHP ^8.2), full directory layout, and every
-node/numbering data class listed above. No GitHub repo exists yet for
-`fissible/transmark` (checked via `gh repo view` — 404), no remote configured
-locally, no commits made.
+node/numbering data class listed above.
 
-**Next task:** #1, `NumberingEngine`. This is the actual differentiator and
-the hard problem (per earlier design discussion, mammoth.js issue #74 is the
-canonical example of getting this wrong) — give it its own
-`superpowers:writing-plans` pass before touching code, since the counter/
-reset/restart semantics need to be nailed down precisely before writing
-tests.
+**Completed (2026-08-05):** Repo created at
+[github.com/fissible/transmark](https://github.com/fissible/transmark)
+(currently **private**), PHPUnit + php-cs-fixer wired up with real passing
+smoke tests, full public-release scaffolding (README, LICENSE, CONTRIBUTING,
+CODE_OF_CONDUCT, PR/issue templates, PHP CI workflow), and the fissible
+org-standard release pipeline (`release.sh`, `.cliff.toml`, `VERSION`,
+reusable release workflow). Tagged and released **v0.1.0** — CI and the
+release workflow both ran green. All 14 roadmap tasks below filed as GitHub
+issues (#1–#14).
 
-**Decisions made this session:** none beyond what's captured in "Design
-decisions locked in" above — this session only executed the already-agreed
-architecture into code.
+**Next task:** #1 (`NumberingEngine` core resolution loop). This is the
+actual differentiator and the hard problem (per earlier design discussion,
+mammoth.js issue #74 is the canonical example of getting this wrong) — give
+it its own `superpowers:writing-plans` pass before touching code, since the
+counter/reset/restart semantics need to be nailed down precisely before
+writing tests.
 
-**Blockers:** none. No GitHub issues created yet (no remote repo to attach
-them to) — create the `fissible/transmark` GitHub repo before opening issues
-for Task 1 onward.
+**Decisions made this session:** repo stays **private** until enough issues
+exist to give the public release some depth (explicit user request) — don't
+flip visibility to public without asking first.
+
+**Blockers:** none.
