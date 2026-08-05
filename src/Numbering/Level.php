@@ -17,8 +17,24 @@ final class Level
         private readonly string $lvlText,
         private readonly int $start = 1,
         private readonly bool $isLegal = false,
+        private readonly RestartRule $restartRule = RestartRule::DefaultImmediateParent,
         private readonly ?int $restartAfterIlvl = null,
     ) {
+        if ($this->restartRule === RestartRule::AfterIlvl) {
+            if ($this->restartAfterIlvl === null) {
+                throw new \InvalidArgumentException('An AfterIlvl restart rule requires an ancestor ilvl.');
+            }
+
+            if ($this->restartAfterIlvl < 0 || $this->restartAfterIlvl >= $this->ilvl) {
+                throw new \InvalidArgumentException(sprintf(
+                    'Restart ilvl must be an ancestor of level %d, got %d.',
+                    $this->ilvl,
+                    $this->restartAfterIlvl,
+                ));
+            }
+        } elseif ($this->restartAfterIlvl !== null) {
+            throw new \InvalidArgumentException('Only an AfterIlvl restart rule may specify an ancestor ilvl.');
+        }
     }
 
     public function ilvl(): int
@@ -46,8 +62,28 @@ final class Level
         return $this->isLegal;
     }
 
+    public function restartRule(): RestartRule
+    {
+        return $this->restartRule;
+    }
+
     public function restartAfterIlvl(): ?int
     {
         return $this->restartAfterIlvl;
+    }
+
+    public function restartsAfter(int $incrementedIlvl): bool
+    {
+        if ($incrementedIlvl >= $this->ilvl) {
+            return false;
+        }
+
+        return match ($this->restartRule) {
+            // Incrementing any ancestor invalidates the default
+            // immediate-parent chain transitively.
+            RestartRule::DefaultImmediateParent => true,
+            RestartRule::Never => false,
+            RestartRule::AfterIlvl => $this->restartAfterIlvl === $incrementedIlvl,
+        };
     }
 }

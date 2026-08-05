@@ -38,10 +38,15 @@ final class NumberingEngine implements NumberingEngineInterface
                 continue;
             }
 
-            $counters[$numId][$ilvl] = ($counters[$numId][$ilvl] ?? $level->start() - 1) + 1;
+            $num = $document->numbering()->num($numId);
+            $levelOverrides = $num?->levelOverrides() ?? [];
+            $start = $levelOverrides[$ilvl] ?? $level->start();
+            $counters[$numId][$ilvl] = ($counters[$numId][$ilvl] ?? $start - 1) + 1;
 
             foreach (array_keys($counters[$numId]) as $deeperIlvl) {
-                if ($deeperIlvl > $ilvl) {
+                $deeperLevel = $document->numbering()->levelFor($numId, $deeperIlvl);
+
+                if ($deeperLevel?->restartsAfter($ilvl) === true) {
                     unset($counters[$numId][$deeperIlvl]);
                 }
             }
