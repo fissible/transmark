@@ -20,7 +20,13 @@ use Fissible\Transmark\Nodes\Inline\Subscript;
 use Fissible\Transmark\Nodes\Inline\Superscript;
 use Fissible\Transmark\Nodes\Inline\Text;
 use Fissible\Transmark\Nodes\Inline\Underline;
+use Fissible\Transmark\Numbering\AbstractNum;
+use Fissible\Transmark\Numbering\Level;
+use Fissible\Transmark\Numbering\Num;
+use Fissible\Transmark\Numbering\NumberFormat;
+use Fissible\Transmark\Numbering\NumberingDefinitions;
 use Fissible\Transmark\Numbering\NumberingRef;
+use Fissible\Transmark\Numbering\RestartRule;
 use Fissible\Transmark\Ooxml\Exception\InvalidPackageException;
 use Fissible\Transmark\Ooxml\OoxmlPackage;
 
@@ -57,7 +63,10 @@ final class DocxReader implements ReaderInterface
                 throw new InvalidPackageException('The DOCX package does not contain word/document.xml.');
             }
 
-            return $this->parseDocument($documentXml);
+            return $this->parseDocument(
+                $documentXml,
+                $this->parseNumbering($package->part('word/numbering.xml')),
+            );
         } finally {
             $package?->close();
 
@@ -67,11 +76,13 @@ final class DocxReader implements ReaderInterface
         }
     }
 
-    private function parseDocument(\DOMDocument $documentXml): Document
-    {
+    private function parseDocument(
+        \DOMDocument $documentXml,
+        NumberingDefinitions $numbering,
+    ): Document {
         $body = $documentXml->getElementsByTagNameNS(self::WORD_NAMESPACE, 'body')->item(0);
         if (!$body instanceof \DOMElement) {
-            return new Document();
+            return new Document(numbering: $numbering);
         }
 
         $content = [];
@@ -88,7 +99,166 @@ final class DocxReader implements ReaderInterface
             $content[] = $this->parseParagraph($child);
         }
 
-        return new Document($content);
+        return new Document($content, $numbering);
+    }
+
+    private function parseNumbering(?\DOMDocument $numberingXml): NumberingDefinitions
+    {
+        if ($numberingXml === null) {
+            return new NumberingDefinitions();
+        }
+
+        $abstractNums = [];
+        foreach ($numberingXml->getElementsByTagNameNS(self::WORD_NAMESPACE, 'abstractNum') as $element) {
+            if (!$element instanceof \DOMElement) {
+                continue;
+            }
+
+            $abstractNum = $this->parseAbstractNum($element);
+            if ($abstractNum !== null) {
+                $abstractNums[$abstractNum->id()] = $abstractNum;
+            }
+        }
+
+        $nums = [];
+        foreach ($numberingXml->getElementsByTagNameNS(self::WORD_NAMESPACE, 'num') as $element) {
+            if (!$element instanceof \DOMElement) {
+                continue;
+            }
+
+            $num = $this->parseNum($element);
+            if ($num !== null) {
+                $nums[$num->numId()] = $num;
+            }
+        }
+
+        return new NumberingDefinitions($abstractNums, $nums);
+    }
+
+    private function parseAbstractNum(\DOMElement $element): ?AbstractNum
+    {
+        $id = $this->attributeValue($element, 'abstractNumId');
+        if ($id === null) {
+            return null;
+        }
+
+        $levels = [];
+        foreach ($element->childNodes as $child) {
+            if (
+                !$child instanceof \DOMElement
+                || $child->namespaceURI !== self::WORD_NAMESPACE
+                || $child->localName !== 'lvl'
+            ) {
+                continue;
+            }
+
+            $level = $this->parseLevel($child);
+            if ($level !== null) {
+                $levels[$level->ilvl()] = $level;
+            }
+        }
+
+        return new AbstractNum(
+            id: (int) $id,
+            levels: $levels,
+            multiLevelType: $this->attributeValue(
+                $this->directChild($element, 'multiLevelType'),
+                'val',
+            ),
+        );
+    }
+
+    private function parseLevel(\DOMElement $element): ?Level
+    {
+        $ilvl = $this->attributeValue($element, 'ilvl');
+        if ($ilvl === null) {
+            return null;
+        }
+
+        $start = 1;
+        $format = NumberFormat::Decimal;
+        $lvlText = '';
+        $isLegal = false;
+        $restartRule = RestartRule::DefaultImmediateParent;
+        $restartAfterIlvl = null;
+
+        foreach ($element->childNodes as $child) {
+            if (!$child instanceof \DOMElement || $child->namespaceURI !== self::WORD_NAMESPACE) {
+                continue;
+            }
+
+            $value = $this->attributeValue($child, 'val');
+
+            if ($child->localName === 'start' && $value !== null) {
+                $start = (int) $value;
+            } elseif ($child->localName === 'numFmt' && $value !== null) {
+                $format = NumberFormat::from($value);
+            } elseif ($child->localName === 'lvlText' && $value !== null) {
+                $lvlText = $value;
+            } elseif ($child->localName === 'isLgl') {
+                $isLegal = $this->isEnabled($child);
+            } elseif ($child->localName === 'lvlRestart' && $value !== null) {
+                [$restartRule, $restartAfterIlvl] = $this->parseRestartRule((int) $value);
+            }
+        }
+
+        return new Level(
+            ilvl: (int) $ilvl,
+            format: $format,
+            lvlText: $lvlText,
+            start: $start,
+            isLegal: $isLegal,
+            restartRule: $restartRule,
+            restartAfterIlvl: $restartAfterIlvl,
+        );
+    }
+
+    /**
+     * @return array{RestartRule, ?int}
+     */
+    private function parseRestartRule(int $value): array
+    {
+        if ($value === 0) {
+            return [RestartRule::Never, null];
+        }
+
+        return [RestartRule::AfterIlvl, $value - 1];
+    }
+
+    private function parseNum(\DOMElement $element): ?Num
+    {
+        $numId = $this->attributeValue($element, 'numId');
+        $abstractNumId = $this->attributeValue(
+            $this->directChild($element, 'abstractNumId'),
+            'val',
+        );
+
+        if ($numId === null || $abstractNumId === null) {
+            return null;
+        }
+
+        $levelOverrides = [];
+        foreach ($element->childNodes as $child) {
+            if (
+                !$child instanceof \DOMElement
+                || $child->namespaceURI !== self::WORD_NAMESPACE
+                || $child->localName !== 'lvlOverride'
+            ) {
+                continue;
+            }
+
+            $ilvl = $this->attributeValue($child, 'ilvl');
+            $startOverride = $this->attributeValue(
+                $this->directChild($child, 'startOverride'),
+                'val',
+            );
+
+            if ($ilvl !== null && $startOverride !== null) {
+                $levelOverrides[(int) $ilvl] = (int) $startOverride;
+            }
+        }
+
+        return new Num((int) $numId, (int) $abstractNumId, $levelOverrides);
     }
 
     private function parseParagraph(\DOMElement $paragraphElement): BlockInterface
@@ -232,18 +402,25 @@ final class DocxReader implements ReaderInterface
             return false;
         }
 
-        $value = strtolower($property->getAttributeNS(self::WORD_NAMESPACE, 'val'));
+        $value = strtolower($this->attributeValue($property, 'val') ?? '');
 
         return !in_array($value, ['0', 'false', 'off', 'none', 'nil'], true);
     }
 
     private function attributeValue(?\DOMElement $element, string $name): ?string
     {
-        if ($element === null || !$element->hasAttributeNS(self::WORD_NAMESPACE, $name)) {
+        if ($element === null) {
             return null;
         }
 
-        return $element->getAttributeNS(self::WORD_NAMESPACE, $name);
+        $attribute = $element->getAttributeNodeNS(self::WORD_NAMESPACE, $name);
+        if ($attribute instanceof \DOMAttr) {
+            return $attribute->value;
+        }
+
+        $attribute = $element->getAttributeNode($name);
+
+        return $attribute instanceof \DOMAttr ? $attribute->value : null;
     }
 
     private function directChild(?\DOMElement $parent, string $localName): ?\DOMElement
