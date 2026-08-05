@@ -76,7 +76,7 @@ final class NumberingEngineTest extends TestCase
 
         self::assertSame('1.1.1.1', $labels->labelFor($greatGrandchild));
         self::assertSame('2', $labels->labelFor($secondParent));
-        self::assertSame('2.1', $labels->labelFor($restartedDeepLevel));
+        self::assertSame('2...1', $labels->labelFor($restartedDeepLevel));
     }
 
     public function test_two_num_ids_sharing_one_abstract_num_do_not_share_counters(): void
