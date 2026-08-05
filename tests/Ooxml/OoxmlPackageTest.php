@@ -118,4 +118,36 @@ final class OoxmlPackageTest extends TestCase
         self::assertSame(1, $abstractNums->length);
         self::assertSame('0', $abstractNums->item(0)->getAttributeNS($ns, 'abstractNumId'));
     }
+
+    public function test_repeated_open_close_cycles_do_not_leak_resources(): void
+    {
+        $path = $this->writeZipFixture(['word/document.xml' => '<w:document/>']);
+
+        $warnings = [];
+        set_error_handler(function (int $errno, string $errstr) use (&$warnings): bool {
+            $warnings[] = $errstr;
+
+            return true;
+        });
+
+        for ($i = 0; $i < 100; $i++) {
+            $package = OoxmlPackage::open($path);
+            $package->part('word/document.xml');
+            $package->close();
+        }
+
+        restore_error_handler();
+
+        self::assertSame([], $warnings, 'Expected no PHP warnings/errors across 100 open/close cycles.');
+    }
+
+    public function test_close_does_not_throw(): void
+    {
+        $path = $this->writeZipFixture(['word/document.xml' => '<w:document/>']);
+        $package = OoxmlPackage::open($path);
+
+        $package->close();
+
+        $this->addToAssertionCount(1); // reaching this line without a thrown error is the assertion
+    }
 }

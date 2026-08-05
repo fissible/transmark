@@ -72,4 +72,9 @@ final class OoxmlPackage
 
         return $dom;
     }
+
+    public function close(): void
+    {
+        $this->zip->close();
+    }
 }
