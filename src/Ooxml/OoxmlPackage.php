@@ -13,6 +13,8 @@ use Fissible\Transmark\Ooxml\Exception\InvalidPackageException;
  */
 final class OoxmlPackage
 {
+    private bool $closed = false;
+
     private function __construct(
         private readonly \ZipArchive $zip,
         private readonly string $path,
@@ -41,6 +43,14 @@ final class OoxmlPackage
 
     public function rawPart(string $partPath): ?string
     {
+        if ($this->closed) {
+            throw new InvalidPackageException(sprintf(
+                'Cannot read "%s": package "%s" is already closed.',
+                $partPath,
+                $this->path,
+            ));
+        }
+
         $contents = $this->zip->getFromName($partPath);
 
         return $contents === false ? null : $contents;
@@ -54,15 +64,36 @@ final class OoxmlPackage
             return null;
         }
 
+        if ($xml === '') {
+            throw new InvalidPackageException(sprintf(
+                'Part "%s" in "%s" is empty and cannot be parsed as XML.',
+                $partPath,
+                $this->path,
+            ));
+        }
+
         $dom = new \DOMDocument();
         $dom->preserveWhiteSpace = true;
 
         $previous = libxml_use_internal_errors(true);
         $loaded = $dom->loadXML($xml);
+        $errors = libxml_get_errors();
         libxml_clear_errors();
         libxml_use_internal_errors($previous);
 
         if ($loaded === false) {
+            $firstError = $errors[0] ?? null;
+
+            if ($firstError !== null) {
+                throw new InvalidPackageException(sprintf(
+                    'Part "%s" in "%s" is not well-formed XML: %s (line %d).',
+                    $partPath,
+                    $this->path,
+                    trim($firstError->message),
+                    $firstError->line,
+                ));
+            }
+
             throw new InvalidPackageException(sprintf(
                 'Part "%s" in "%s" is not well-formed XML.',
                 $partPath,
@@ -75,6 +106,11 @@ final class OoxmlPackage
 
     public function close(): void
     {
+        if ($this->closed) {
+            return;
+        }
+
         $this->zip->close();
+        $this->closed = true;
     }
 }

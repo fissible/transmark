@@ -97,9 +97,24 @@ final class OoxmlPackageTest extends TestCase
         $path = $this->writeZipFixture(['word/document.xml' => '<w:document>not closed']);
         $package = OoxmlPackage::open($path);
 
+        try {
+            $package->part('word/document.xml');
+            self::fail('Expected InvalidPackageException was not thrown.');
+        } catch (InvalidPackageException $exception) {
+            self::assertStringContainsString('line', $exception->getMessage());
+        }
+    }
+
+    public function test_part_throws_for_an_empty_part(): void
+    {
+        $path = $this->writeZipFixture(['word/empty.xml' => '']);
+        $package = OoxmlPackage::open($path);
+
+        self::assertSame('', $package->rawPart('word/empty.xml'));
+
         $this->expectException(InvalidPackageException::class);
 
-        $package->part('word/document.xml');
+        $package->part('word/empty.xml');
     }
 
     public function test_part_returns_a_dom_document_with_working_namespace_queries(): void
@@ -130,13 +145,15 @@ final class OoxmlPackageTest extends TestCase
             return true;
         });
 
-        for ($i = 0; $i < 100; $i++) {
-            $package = OoxmlPackage::open($path);
-            $package->part('word/document.xml');
-            $package->close();
+        try {
+            for ($i = 0; $i < 100; $i++) {
+                $package = OoxmlPackage::open($path);
+                $package->part('word/document.xml');
+                $package->close();
+            }
+        } finally {
+            restore_error_handler();
         }
-
-        restore_error_handler();
 
         self::assertSame([], $warnings, 'Expected no PHP warnings/errors across 100 open/close cycles.');
     }
@@ -149,5 +166,37 @@ final class OoxmlPackageTest extends TestCase
         $package->close();
 
         $this->addToAssertionCount(1); // reaching this line without a thrown error is the assertion
+    }
+
+    public function test_close_is_idempotent(): void
+    {
+        $path = $this->writeZipFixture(['word/document.xml' => '<w:document/>']);
+        $package = OoxmlPackage::open($path);
+
+        $package->close();
+        $package->close();
+
+        $this->addToAssertionCount(1); // reaching this line without a thrown error is the assertion
+    }
+
+    public function test_raw_part_throws_after_the_package_is_closed(): void
+    {
+        $path = $this->writeZipFixture(['word/document.xml' => '<w:document/>']);
+        $package = OoxmlPackage::open($path);
+
+        $package->close();
+
+        $this->expectException(InvalidPackageException::class);
+
+        $package->rawPart('word/document.xml');
+    }
+
+    public function test_raw_part_returns_exact_bytes_for_binary_content(): void
+    {
+        $bytes = "\x89PNG\r\n\x1a\n\x00\x01\x02\xFF";
+        $path = $this->writeZipFixture(['word/media/image1.png' => $bytes]);
+        $package = OoxmlPackage::open($path);
+
+        self::assertSame($bytes, $package->rawPart('word/media/image1.png'));
     }
 }
