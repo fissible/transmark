@@ -12,6 +12,7 @@ final class AbstractNum
     public function __construct(
         private readonly int $id,
         private readonly array $levels,
+        private readonly ?string $multiLevelType = null,
     ) {
     }
 
@@ -31,5 +32,10 @@ final class AbstractNum
     public function levels(): array
     {
         return $this->levels;
+    }
+
+    public function multiLevelType(): ?string
+    {
+        return $this->multiLevelType;
     }
 }

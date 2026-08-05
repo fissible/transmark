@@ -98,7 +98,7 @@ final class DocxReaderTest extends TestCase
 
         self::assertSame($expected, $actual);
         $firstNumbering = array_values($expected)[0];
-        self::assertNull($document->numbering()->num($firstNumbering[0]));
+        self::assertNotNull($document->numbering()->num($firstNumbering[0]));
     }
 
     public function test_bold_and_italic_on_one_run_nest_correctly(): void

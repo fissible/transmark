@@ -32,6 +32,22 @@ final class NumberingDefinitions
         return $this->nums[$numId] ?? null;
     }
 
+    /**
+     * @return array<int, AbstractNum>
+     */
+    public function abstractNums(): array
+    {
+        return $this->abstractNums;
+    }
+
+    /**
+     * @return array<int, Num>
+     */
+    public function nums(): array
+    {
+        return $this->nums;
+    }
+
     public function levelFor(int $numId, int $ilvl): ?Level
     {
         $num = $this->num($numId);
