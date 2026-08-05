@@ -156,7 +156,8 @@ final class HtmlWriterSimpleListsTest extends TestCase
         );
 
         self::assertSame(
-            '<p>Parent</p><p>Child</p>',
+            '<p class="numbered-paragraph legal-level-0">1 Parent</p>'
+            .'<p class="numbered-paragraph legal-level-1">1.1 Child</p>',
             (new HtmlWriter())->write($document),
         );
     }

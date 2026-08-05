@@ -5,10 +5,9 @@ document model, with faithful multi-level numbering resolution and
 pluggable readers/writers for DOCX, Markdown, and HTML — no system
 binaries required.
 
-> **Status: pre-alpha.** The document model and numbering data structures
-> are in place; readers, writers, and the numbering engine itself are not
-> yet implemented. See [PROJECT.md](PROJECT.md) for the roadmap. Not yet
-> published to Packagist.
+> **Status: pre-alpha.** The document model, numbering engine, DOCX reader,
+> and HTML writer are implemented. Markdown support and broader node coverage
+> remain on the roadmap. Not yet published to Packagist.
 
 ## Why
 
@@ -43,6 +42,14 @@ numbering model into HTML's `<ol>`/`<li>` nesting. See
 - **Semantic idempotence, not byte-for-byte.** `AST → format → AST`
   should return an equivalent tree. Byte-for-byte round-tripping through
   DOCX or Markdown is not a goal — neither format is canonical.
+
+## HTML output conventions
+
+Simple lists render as native nested `<ol>`/`<ul>` elements. Legal-outline
+numbering renders as flat paragraphs because HTML cannot express labels that
+concatenate counters across levels. Those paragraphs use
+`class="numbered-paragraph legal-level-N"`, where `N` is the zero-based OOXML
+numbering level, so consumers can style each indentation depth.
 
 ## Planned packages
 
