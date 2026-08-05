@@ -49,6 +49,27 @@ final class DocumentModelTest extends TestCase
         self::assertSame(NumberFormat::Decimal, $level->format());
     }
 
+    public function test_numbering_definition_builders_preserve_existing_numeric_ids(): void
+    {
+        $firstAbstractNum = new AbstractNum(10, [
+            0 => new Level(0, NumberFormat::Decimal, '%1.'),
+        ]);
+        $secondAbstractNum = new AbstractNum(20, [
+            0 => new Level(0, NumberFormat::LowerLetter, '%1.'),
+        ]);
+
+        $definitions = (new NumberingDefinitions())
+            ->withAbstractNum($firstAbstractNum)
+            ->withAbstractNum($secondAbstractNum)
+            ->withNum(new Num(numId: 1, abstractNumId: 10))
+            ->withNum(new Num(numId: 2, abstractNumId: 20));
+
+        self::assertSame($firstAbstractNum, $definitions->abstractNum(10));
+        self::assertSame($secondAbstractNum, $definitions->abstractNum(20));
+        self::assertSame(10, $definitions->num(1)?->abstractNumId());
+        self::assertSame(20, $definitions->num(2)?->abstractNumId());
+    }
+
     public function test_document_holds_mixed_block_content_alongside_its_numbering_table(): void
     {
         $numbering = (new NumberingDefinitions())
