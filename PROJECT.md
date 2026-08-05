@@ -33,13 +33,60 @@ changes.
   packages sharing this package's OOXML/zip and document-model layers —
   out of scope here.
 
-## Status: skeleton complete
+**Added after the requirements/spike pass (2026-08-04):**
 
-`composer.json`, PSR-4 namespace layout (`Fissible\Transmark\`), and the full
-node taxonomy + numbering data model exist as data-only classes (no reader,
-writer, or numbering-resolution logic yet). Verified: `php -l` on every file,
-`composer dump-autoload`, and a smoke script instantiating `Document` +
-`Paragraph` + `NumberingRef` + `NumberingDefinitions` together.
+- **`DocxReader` is uniform, never classifies.** Real OOXML numbering comes
+  in two structurally distinct shapes — independent `numId` per nesting
+  depth with single-placeholder `lvlText` ("simple", what pandoc produces)
+  vs. one `numId` spanning all depths with concatenated `lvlText` +/-
+  `isLgl` ("legal") — see `tests/fixtures/numbering/README.md` for the
+  validated ground truth. `DocxReader` always builds `Paragraph`+
+  `NumberingRef` regardless of which shape it sees; it never tries to
+  detect "this looks like a simple list" and rebuild a `ListNode` tree.
+  Classification is a **writer** concern (see next point).
+- **Writers classify simple-vs-legal per `numId`, not the reader.** A
+  `numId` is "simple" if every level it uses has non-`isLgl`,
+  single-placeholder `lvlText` (browsers/Markdown can auto-count it
+  natively); otherwise it's "legal" and must be rendered as flat
+  paragraphs with a literal, fully-computed label string, since neither
+  HTML nor Markdown has native support for concatenated cross-level
+  counters. `HtmlWriter` is split into two issues along exactly this line
+  (#9 simple, #10 legal); `MarkdownWriter` (#11) reuses the same
+  classification and should share the logic rather than duplicate it.
+- **`league/commonmark` (^2.4) is a real runtime dependency**, adopted as
+  `MarkdownReader`'s underlying parser rather than hand-rolling a
+  CommonMark-subset parser. Validated via spike
+  (`docs/spikes/commonmark-ast-mapping.php`): its parsed AST
+  (`Document > Heading/ListBlock/Paragraph > ListItem > ... > Text/Strong/Emphasis`)
+  maps cleanly onto this project's own `Block`/`Inline` taxonomy with zero
+  numbering-model involvement, confirming Markdown lists are exactly the
+  `ListNode`/`ListItem` case above. BSD-3-Clause, lightweight transitive
+  deps (`league/config`, `psr/event-dispatcher`, symfony polyfill/
+  deprecation shims), no system-binary requirement.
+- **`phpoffice/phpword` is explicitly rejected** as a `DocxReader`
+  foundation. Confirmed by reading its `Reader\Word2007\Numbering::readLevel()`
+  source directly: it captures `start`/`numFmt`/`lvlRestart`/`suffix`/
+  `lvlText`/etc. but **never reads `w:isLgl` at all** — it would silently
+  drop the exact fidelity feature this project exists to preserve.
+  `DocxReader` (#6, #7) is hand-rolled against `DOMDocument`, reusing only
+  the zip-extraction technique (not the package) via a small
+  format-agnostic `Ooxml\OoxmlPackage` (#5) shared with the future
+  `transmark-xlsx` package.
+
+## Status: skeleton + requirements/spikes complete, ready for issue #1
+
+`composer.json` (now including `league/commonmark:^2.4`, see design
+decisions above), PSR-4 namespace layout (`Fissible\Transmark\`), and the
+full node taxonomy + numbering data model exist as data-only classes (no
+reader, writer, or numbering-resolution logic yet). Verified: `php -l` on
+every file, `composer dump-autoload`, `vendor/bin/phpunit` (3 passing
+smoke tests), and two validated spike scripts (`docs/spikes/`) proving the
+data model resolves genuine legal-outline numbering correctly and that
+`league/commonmark`'s AST maps cleanly onto this project's own node
+taxonomy. Ground-truth OOXML fixtures committed at
+`tests/fixtures/numbering/` (see its `README.md` for full provenance and
+expected values) — all 14 GitHub issues now reference these directly
+rather than asking each contributor to regenerate them.
 
 ```
 src/
@@ -63,9 +110,19 @@ src/
 ├── Numbering/
 │   ├── NumberFormat.php (enum), Level, AbstractNum, Num,
 │   │   NumberingDefinitions, NumberingRef, NumberingLabelMap
-│   └── (NumberingEngine implementation — not yet built, see Task 1)
+│   └── (NumberingEngine implementation — not yet built, see issue #1)
+├── Ooxml/            # empty — shared zip+DOM package layer lands here (issue #5)
 ├── Readers/          # empty — DocxReader, MarkdownReader land here
 └── Writers/          # empty — HtmlWriter, MarkdownWriter land here
+
+tests/fixtures/numbering/
+├── README.md                  # provenance + expected labels for both fixtures
+├── simple-nested-lists/       # pandoc-generated: independent numId per depth
+└── legal-outline/             # hand-crafted: concatenated lvlText + isLgl
+
+docs/spikes/
+├── legal-outline-resolve.php  # validated prototype of the resolution algorithm
+└── commonmark-ast-mapping.php # validated league/commonmark AST walk
 ```
 
 ## Dependency-ordered task list
@@ -73,24 +130,34 @@ src/
 Leaves first, most-widely-depended-on before its siblings. Each task should
 get its own TDD implementation plan (`superpowers:writing-plans` +
 `superpowers:subagent-driven-development` or `executing-plans`) when started
-— this roadmap only sequences them.
+— this roadmap only sequences them. All 14 issues below were rewritten
+(2026-08-04) into fully fleshed-out, pickup-ready tickets after a
+requirements/spike pass — see the design decisions above and each issue's
+own body for full context, acceptance criteria, and test suites.
+
+**Parallelizable leaves** (no dependency on each other — pick whichever
+fits): #1, #5, #8 can all start immediately and in parallel. #6 and #7
+also both only depend on #5 and **not on each other or on #1-#4** (reading
+a `numId`/`ilvl` pointer off a paragraph needs no knowledge of what it
+resolves to) — so once #5 lands, #6, #7, and the #1-#4 chain can all
+proceed in parallel.
 
 | # | Task | Effort | Depends on | Issue | Status |
 |---|------|--------|------------|-------|--------|
-| 1a | `NumberingEngine` core resolution loop (counter state per numId) | M | Numbering data model (done) | [#1](https://github.com/fissible/transmark/issues/1) | Not started |
-| 1b | `lvlText` templating and `NumberFormat` rendering | M | 1a | [#2](https://github.com/fissible/transmark/issues/2) | Not started |
-| 1c | Level restart and override rules | S | 1a, 1b | [#3](https://github.com/fissible/transmark/issues/3) | Not started |
-| 1d | NumberingEngine test suite: legal outlines, restarts, overrides | S | 1a–1c | [#4](https://github.com/fissible/transmark/issues/4) | Not started |
-| 2a | Shared OOXML/zip extraction layer (docx + future xlsx) | S | none | [#5](https://github.com/fissible/transmark/issues/5) | Not started |
-| 2b | `DocxReader`: `word/document.xml` → `Block`/`Inline` tree | XL | 2a | [#6](https://github.com/fissible/transmark/issues/6) | Not started |
-| 2c | `DocxReader`: `word/numbering.xml` → `NumberingDefinitions` | L | 2a | [#7](https://github.com/fissible/transmark/issues/7) | Not started |
-| 3 | `MarkdownReader`: CommonMark-subset parser → tree (`ListNode`/`ListItem`, not `NumberingRef`) | L | Node taxonomy (done) | [#8](https://github.com/fissible/transmark/issues/8) | Not started |
-| 4a | `HtmlWriter`: semantic `<ol>` nesting for simple lists | M | none | [#9](https://github.com/fissible/transmark/issues/9) | Not started |
-| 4b | `HtmlWriter`: flat + rendered-label strategy for legal outlines | M | 1a–1c | [#10](https://github.com/fissible/transmark/issues/10) | Not started |
-| 5 | `MarkdownWriter`: tree → Markdown | M | Task 3 (node coverage) | [#11](https://github.com/fissible/transmark/issues/11) | Not started |
-| 6 | Semantic-idempotence test harness: generate/hand-write ASTs, round-trip through each reader/writer pair, assert tree equality | M | Tasks 3, 5 (minimum) | [#12](https://github.com/fissible/transmark/issues/12) | Not started |
-| 7 | `fissible/transmark-blade` (separate package): Blade adapter consuming this package's `Document`/writers | M | Tasks 4a–4b | [#13](https://github.com/fissible/transmark/issues/13) | Not started |
-| 8 | `fissible/transmark-xlsx` (separate package): xlsx reader/writer sharing the OOXML/zip layer | XL | Task 2a | [#14](https://github.com/fissible/transmark/issues/14) | Not started |
+| 1a | `NumberingEngine` core counter/restart resolution loop | M | Numbering data model (done) | [#1](https://github.com/fissible/transmark/issues/1) | Not started |
+| 1b | `lvlText` templating, `NumberFormat` rendering, `isLgl` | M | #1 | [#2](https://github.com/fissible/transmark/issues/2) | Not started |
+| 1c | Explicit `lvlRestart` (3-state) and per-`numId` start overrides | S | #1, #2 | [#3](https://github.com/fissible/transmark/issues/3) | Not started |
+| 1d | End-to-end engine test suite against committed ground-truth fixtures | S | #1–#3 | [#4](https://github.com/fissible/transmark/issues/4) | Not started |
+| 2a | Shared OOXML package layer (`Ooxml\OoxmlPackage`: zip + DOM, docx/xlsx-agnostic) | S | none | [#5](https://github.com/fissible/transmark/issues/5) | Not started |
+| 2b | `DocxReader`: `word/document.xml` → `Block`/`Inline` tree (uniform `Paragraph`+`NumberingRef`, no classification) | XL | #5 | [#6](https://github.com/fissible/transmark/issues/6) | Not started |
+| 2c | `DocxReader`: `word/numbering.xml` → `NumberingDefinitions` | L | #5 | [#7](https://github.com/fissible/transmark/issues/7) | Not started |
+| 3 | `MarkdownReader`: `league/commonmark` AST → tree (`ListNode`/`ListItem`, never `NumberingRef`) | L | Node taxonomy (done); `league/commonmark` dependency already added | [#8](https://github.com/fissible/transmark/issues/8) | Not started |
+| 4a | `HtmlWriter`: semantic `<ol>`/`<ul>` for `ListNode` trees + "simple" `numId` runs | M | none for `ListNode`; #6/#7 for the numbered-paragraph case | [#9](https://github.com/fissible/transmark/issues/9) | Not started |
+| 4b | `HtmlWriter`: flat + literal-label strategy for "legal" `numId` runs | M | #1–#4, #9 (classification logic) | [#10](https://github.com/fissible/transmark/issues/10) | Not started |
+| 5 | `MarkdownWriter`: tree → Markdown, reusing #9/#10's simple-vs-legal classification | M | #8 (node coverage); #1–#4 and #9/#10 (classification) for numbered-paragraph fallback | [#11](https://github.com/fissible/transmark/issues/11) | Not started |
+| 6 | Semantic-idempotence test harness: hand-write ASTs, round-trip through each reader/writer pair, assert tree equality (with explicit "expected lossy" markers, e.g. legal outlines through Markdown) | M | #8, #11 (minimum, Markdown ⇄ Markdown) | [#12](https://github.com/fissible/transmark/issues/12) | Not started |
+| 7 | `fissible/transmark-blade` (separate package, stub only — re-scope once #9/#10's `HtmlWriter` output conventions settle) | M (re-scope pending) | #9, #10 | [#13](https://github.com/fissible/transmark/issues/13) | Stub — needs re-scoping |
+| 8 | `fissible/transmark-xlsx` (separate package, stub only — re-scope once `OoxmlPackage` is validated by real usage) | XL (re-scope pending) | #5 (and validation from #6/#7) | [#14](https://github.com/fissible/transmark/issues/14) | Stub — needs re-scoping |
 
 ## Session handoff notes
 
@@ -108,12 +175,48 @@ reusable release workflow). Tagged and released **v0.1.0** — CI and the
 release workflow both ran green. All 14 roadmap tasks below filed as GitHub
 issues (#1–#14).
 
-**Next task:** #1 (`NumberingEngine` core resolution loop). This is the
-actual differentiator and the hard problem (per earlier design discussion,
-mammoth.js issue #74 is the canonical example of getting this wrong) — give
-it its own `superpowers:writing-plans` pass before touching code, since the
-counter/reset/restart semantics need to be nailed down precisely before
-writing tests.
+**Completed (2026-08-04, requirements/spike pass):** Ran real spike scripts
+(not just discussion) to close every open design gap before finalizing the
+roadmap:
+- Hand-crafted a genuine legal-outline OOXML fixture (concatenated
+  `lvlText` + `isLgl`) since pandoc can't produce this pattern from
+  Markdown, and validated the existing `Level`/`AbstractNum` model
+  resolves it correctly end-to-end via a working prototype engine
+  (`docs/spikes/legal-outline-resolve.php`).
+- Confirmed via spec research (ECMA-376 §17.9.4, §17.9.11) the precise
+  semantics of `w:isLgl` and the 3-state `w:lvlRestart` (absent = restart
+  on immediate parent; `val="N"` = restart on a specific ancestor;
+  `val="0"` = never restart) — the latter is a real gap in the current
+  `Level` model, flagged explicitly in issue #3.
+- Ran a build-vs-buy spike for `MarkdownReader`: adopted
+  `league/commonmark` (already added to `composer.json`) after confirming
+  its AST maps cleanly onto this project's own node taxonomy
+  (`docs/spikes/commonmark-ast-mapping.php`).
+- Ran a build-vs-buy spike for `DocxReader`: rejected `phpoffice/phpword`
+  after reading its numbering reader source directly and confirming it
+  silently drops `w:isLgl` — the exact fidelity feature this project
+  exists for.
+- Committed both fixture sets + provenance docs at
+  `tests/fixtures/numbering/` so every relevant issue can reference real
+  ground truth instead of asking each contributor to regenerate it.
+- Rewrote all 14 GitHub issues into fully fleshed-out, pickup-ready
+  tickets with concrete acceptance criteria, test suites, and explicit
+  cross-issue dependency notes (including corrections to the original
+  dependency graph — e.g. #6 and #7 turned out to be independent of each
+  other and of #1–#4, and #9's `ListNode` half needs no numbering
+  dependency at all). #13 and #14 were deliberately left as re-scope-later
+  stubs since their target API surface depends on decisions #9/#10 and
+  #5–#7 haven't made yet.
+
+**Next task:** #1 (`NumberingEngine` core resolution loop) or #5 (shared
+OOXML package layer) or #8 (`MarkdownReader`) — all three are unblocked
+leaves and can be picked up in parallel by different contributors. #1 is
+the project's actual differentiator (per earlier design discussion,
+mammoth.js issue #74 is the canonical example of getting this class of bug
+wrong) — give it its own `superpowers:writing-plans` pass before touching
+code even though the counter/restart algorithm is now spike-validated,
+since translating a prototype into a properly tested, PSR-12-clean
+implementation is still real design work.
 
 **Decisions made this session:** repo stays **private** until enough issues
 exist to give the public release some depth (explicit user request) — don't
