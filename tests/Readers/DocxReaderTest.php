@@ -1,0 +1,327 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Fissible\Transmark\Tests\Readers;
+
+use Fissible\Transmark\Contracts\ReaderInterface;
+use Fissible\Transmark\Document;
+use Fissible\Transmark\Nodes\Block\BlockQuote;
+use Fissible\Transmark\Nodes\Block\Heading;
+use Fissible\Transmark\Nodes\Block\HorizontalRule;
+use Fissible\Transmark\Nodes\Block\Paragraph;
+use Fissible\Transmark\Nodes\Inline\Emphasis;
+use Fissible\Transmark\Nodes\Inline\LineBreak;
+use Fissible\Transmark\Nodes\Inline\Strike;
+use Fissible\Transmark\Nodes\Inline\Strong;
+use Fissible\Transmark\Nodes\Inline\Subscript;
+use Fissible\Transmark\Nodes\Inline\Superscript;
+use Fissible\Transmark\Nodes\Inline\Text;
+use Fissible\Transmark\Nodes\Inline\Underline;
+use Fissible\Transmark\Ooxml\Exception\InvalidPackageException;
+use Fissible\Transmark\Readers\DocxReader;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\TestCase;
+
+final class DocxReaderTest extends TestCase
+{
+    private const WORD_NAMESPACE = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
+    public function test_plain_paragraph_reads_as_an_unnumbered_paragraph(): void
+    {
+        $reader = new DocxReader();
+
+        $document = $reader->read($this->docxWithDocumentXml($this->documentXml(
+            '<w:p><w:r><w:t>Hello world</w:t></w:r></w:p>',
+        )));
+
+        self::assertInstanceOf(ReaderInterface::class, $reader);
+        self::assertCount(1, $document->content());
+        $paragraph = $document->content()[0];
+        self::assertInstanceOf(Paragraph::class, $paragraph);
+        self::assertFalse($paragraph->isNumbered());
+        self::assertNull($paragraph->styleName());
+        self::assertCount(1, $paragraph->inlines());
+        self::assertInstanceOf(Text::class, $paragraph->inlines()[0]);
+        self::assertSame('Hello world', $paragraph->inlines()[0]->content());
+    }
+
+    public function test_heading_style_produces_a_heading_node_with_correct_level(): void
+    {
+        $document = $this->readBody(
+            '<w:p>'
+            .'<w:pPr><w:pStyle w:val="Heading2"/></w:pPr>'
+            .'<w:r><w:t>Scope</w:t></w:r>'
+            .'</w:p>',
+        );
+
+        self::assertCount(1, $document->content());
+        $heading = $document->content()[0];
+        self::assertInstanceOf(Heading::class, $heading);
+        self::assertSame(2, $heading->level());
+        self::assertInstanceOf(Text::class, $heading->inlines()[0]);
+        self::assertSame('Scope', $heading->inlines()[0]->content());
+    }
+
+    /**
+     * @param array<string, array{int, int}> $expected
+     */
+    #[DataProvider('numberingFixtures')]
+    public function test_numbered_paragraphs_carry_exact_source_numid_and_ilvl(
+        string $fixtureName,
+        array $expected,
+    ): void {
+        $documentXml = file_get_contents(
+            __DIR__.'/../fixtures/numbering/'.$fixtureName.'/document.xml',
+        );
+        $numberingXml = file_get_contents(
+            __DIR__.'/../fixtures/numbering/'.$fixtureName.'/numbering.xml',
+        );
+        self::assertIsString($documentXml);
+        self::assertIsString($numberingXml);
+
+        $document = (new DocxReader())->read($this->docx([
+            'word/document.xml' => $documentXml,
+            'word/numbering.xml' => $numberingXml,
+        ]));
+
+        $actual = [];
+        foreach ($document->content() as $block) {
+            if (!$block instanceof Paragraph || !$block->isNumbered()) {
+                continue;
+            }
+
+            $numbering = $block->numbering();
+            self::assertNotNull($numbering);
+            $actual[$this->paragraphText($block)] = [$numbering->numId(), $numbering->ilvl()];
+        }
+
+        self::assertSame($expected, $actual);
+        $firstNumbering = array_values($expected)[0];
+        self::assertNull($document->numbering()->num($firstNumbering[0]));
+    }
+
+    public function test_bold_and_italic_on_one_run_nest_correctly(): void
+    {
+        $document = $this->readBody(
+            '<w:p><w:r><w:rPr><w:b/><w:i/></w:rPr><w:t>Important</w:t></w:r></w:p>',
+        );
+
+        $paragraph = $document->content()[0];
+        self::assertInstanceOf(Paragraph::class, $paragraph);
+        self::assertCount(1, $paragraph->inlines());
+
+        $strong = $paragraph->inlines()[0];
+        self::assertInstanceOf(Strong::class, $strong);
+        self::assertCount(1, $strong->children());
+
+        $emphasis = $strong->children()[0];
+        self::assertInstanceOf(Emphasis::class, $emphasis);
+        self::assertCount(1, $emphasis->children());
+        self::assertInstanceOf(Text::class, $emphasis->children()[0]);
+        self::assertSame('Important', $emphasis->children()[0]->content());
+    }
+
+    public function test_line_break_produces_a_linebreak_node(): void
+    {
+        $document = $this->readBody(
+            '<w:p><w:r><w:t>Before</w:t><w:br/><w:t>After</w:t></w:r></w:p>',
+        );
+
+        $paragraph = $document->content()[0];
+        self::assertInstanceOf(Paragraph::class, $paragraph);
+        self::assertCount(3, $paragraph->inlines());
+        self::assertInstanceOf(Text::class, $paragraph->inlines()[0]);
+        self::assertInstanceOf(LineBreak::class, $paragraph->inlines()[1]);
+        self::assertInstanceOf(Text::class, $paragraph->inlines()[2]);
+        self::assertSame('Before', $paragraph->inlines()[0]->content());
+        self::assertSame('After', $paragraph->inlines()[2]->content());
+    }
+
+    public function test_unrecognized_content_does_not_throw_and_supported_text_is_preserved(): void
+    {
+        $document = $this->readBody(
+            '<w:tbl><w:tr><w:tc><w:p><w:r><w:t>Skipped table</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+            .'<w:p>'
+            .'<w:empty/>'
+            .'<w:custom><w:r><w:t>Flattened</w:t></w:r></w:custom>'
+            .'<w:r><w:drawing/><w:t> text</w:t><w:unknown/></w:r>'
+            .'</w:p>'
+            .'<w:unsupported/>',
+        );
+
+        self::assertCount(1, $document->content());
+        $paragraph = $document->content()[0];
+        self::assertInstanceOf(Paragraph::class, $paragraph);
+        self::assertSame('Flattened text', $this->paragraphText($paragraph));
+    }
+
+    public function test_missing_document_part_throws_an_invalid_package_exception(): void
+    {
+        $content = $this->docx(['word/other.xml' => '<root/>']);
+
+        $this->expectException(InvalidPackageException::class);
+
+        (new DocxReader())->read($content);
+    }
+
+    #[DataProvider('quoteStyles')]
+    public function test_quote_styles_produce_block_quotes(string $styleName): void
+    {
+        $document = $this->readBody(
+            '<w:p>'
+            .sprintf('<w:pPr><w:pStyle w:val="%s"/></w:pPr>', $styleName)
+            .'<w:r><w:t>Quoted text</w:t></w:r>'
+            .'</w:p>',
+        );
+
+        $quote = $document->content()[0];
+        self::assertInstanceOf(BlockQuote::class, $quote);
+        self::assertCount(1, $quote->content());
+        $paragraph = $quote->content()[0];
+        self::assertInstanceOf(Paragraph::class, $paragraph);
+        self::assertSame($styleName, $paragraph->styleName());
+        self::assertSame('Quoted text', $this->paragraphText($paragraph));
+    }
+
+    public function test_empty_bottom_bordered_paragraph_produces_a_horizontal_rule(): void
+    {
+        $document = $this->readBody(
+            '<w:p><w:pPr><w:pBdr><w:bottom w:val="single"/></w:pBdr></w:pPr></w:p>',
+        );
+
+        self::assertCount(1, $document->content());
+        self::assertInstanceOf(HorizontalRule::class, $document->content()[0]);
+    }
+
+    public function test_other_supported_run_formats_produce_their_inline_wrappers(): void
+    {
+        $document = $this->readBody(
+            '<w:p>'
+            .'<w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>underline</w:t></w:r>'
+            .'<w:r><w:rPr><w:strike/></w:rPr><w:t>strike</w:t></w:r>'
+            .'<w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:t>super</w:t></w:r>'
+            .'<w:r><w:rPr><w:vertAlign w:val="subscript"/></w:rPr><w:t>sub</w:t></w:r>'
+            .'</w:p>',
+        );
+
+        $paragraph = $document->content()[0];
+        self::assertInstanceOf(Paragraph::class, $paragraph);
+        self::assertCount(4, $paragraph->inlines());
+        self::assertInstanceOf(Underline::class, $paragraph->inlines()[0]);
+        self::assertInstanceOf(Strike::class, $paragraph->inlines()[1]);
+        self::assertInstanceOf(Superscript::class, $paragraph->inlines()[2]);
+        self::assertInstanceOf(Subscript::class, $paragraph->inlines()[3]);
+
+        self::assertSame('underline', $this->wrappedText($paragraph->inlines()[0]));
+        self::assertSame('strike', $this->wrappedText($paragraph->inlines()[1]));
+        self::assertSame('super', $this->wrappedText($paragraph->inlines()[2]));
+        self::assertSame('sub', $this->wrappedText($paragraph->inlines()[3]));
+    }
+
+    /**
+     * @return iterable<string, array{string, array<string, array{int, int}>}>
+     */
+    public static function numberingFixtures(): iterable
+    {
+        yield 'legal outline' => ['legal-outline', [
+            'Definitions' => [2000, 0],
+            'Term of Agreement' => [2000, 0],
+            'Initial Term' => [2000, 1],
+            'Renewal' => [2000, 1],
+            'Automatic renewal' => [2000, 2],
+            'Written notice' => [2000, 3],
+            'Termination' => [2000, 0],
+        ]];
+
+        yield 'simple nested lists' => ['simple-nested-lists', [
+            'Term of Agreement' => [1001, 0],
+            'Initial Term' => [1002, 1],
+            'Renewal' => [1002, 1],
+            'Automatic renewal' => [1003, 2],
+            'Notice of non-renewal' => [1003, 2],
+            'Written notice' => [1004, 3],
+            'Delivery method' => [1004, 3],
+            'Termination' => [1001, 0],
+        ]];
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function quoteStyles(): iterable
+    {
+        yield 'quote' => ['Quote'];
+        yield 'intense quote' => ['IntenseQuote'];
+    }
+
+    private function readBody(string $body): Document
+    {
+        return (new DocxReader())->read($this->docxWithDocumentXml($this->documentXml($body)));
+    }
+
+    private function documentXml(string $body): string
+    {
+        return sprintf(
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            .'<w:document xmlns:w="%s"><w:body>%s</w:body></w:document>',
+            self::WORD_NAMESPACE,
+            $body,
+        );
+    }
+
+    private function docxWithDocumentXml(string $documentXml): string
+    {
+        return $this->docx(['word/document.xml' => $documentXml]);
+    }
+
+    /**
+     * @param array<string, string> $parts
+     */
+    private function docx(array $parts): string
+    {
+        $path = tempnam(sys_get_temp_dir(), 'transmark-docx-test-');
+        self::assertIsString($path);
+
+        try {
+            $zip = new \ZipArchive();
+            self::assertTrue($zip->open($path, \ZipArchive::OVERWRITE));
+
+            foreach ($parts as $partPath => $contents) {
+                self::assertTrue($zip->addFromString($partPath, $contents));
+            }
+
+            self::assertTrue($zip->close());
+            $bytes = file_get_contents($path);
+            self::assertIsString($bytes);
+
+            return $bytes;
+        } finally {
+            if (is_file($path)) {
+                unlink($path);
+            }
+        }
+    }
+
+    private function paragraphText(Paragraph $paragraph): string
+    {
+        $text = '';
+        foreach ($paragraph->inlines() as $inline) {
+            if ($inline instanceof Text) {
+                $text .= $inline->content();
+            }
+        }
+
+        return $text;
+    }
+
+    private function wrappedText(object $wrapper): string
+    {
+        self::assertTrue(method_exists($wrapper, 'children'));
+        $children = $wrapper->children();
+        self::assertCount(1, $children);
+        self::assertInstanceOf(Text::class, $children[0]);
+
+        return $children[0]->content();
+    }
+}
