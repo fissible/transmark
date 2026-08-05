@@ -24,15 +24,24 @@ use Fissible\Transmark\Nodes\Inline\Text;
 use Fissible\Transmark\Nodes\Inline\Underline;
 use Fissible\Transmark\Numbering\Level;
 use Fissible\Transmark\Numbering\NumberFormat;
+use Fissible\Transmark\Numbering\NumberingEngine;
+use Fissible\Transmark\Numbering\NumberingLabelMap;
 
+/**
+ * Legal-outline paragraphs use the classes "numbered-paragraph" and
+ * "legal-level-{ilvl}" so consumers can style label-bearing flat paragraphs.
+ */
 final class HtmlWriter implements WriterInterface
 {
     public function write(Document $document): string
     {
+        $labels = (new NumberingEngine())->resolve($document);
+
         return $this->renderBlocks(
             $document->content(),
             $document,
             $this->classifySimpleNumIds($document),
+            $labels,
         );
     }
 
@@ -40,8 +49,12 @@ final class HtmlWriter implements WriterInterface
      * @param BlockInterface[] $blocks
      * @param array<int, bool> $simpleNumIds
      */
-    private function renderBlocks(array $blocks, Document $document, array $simpleNumIds): string
-    {
+    private function renderBlocks(
+        array $blocks,
+        Document $document,
+        array $simpleNumIds,
+        NumberingLabelMap $labels,
+    ): string {
         $html = '';
         $count = count($blocks);
 
@@ -66,7 +79,7 @@ final class HtmlWriter implements WriterInterface
                 continue;
             }
 
-            $html .= $this->renderBlock($block, $document, $simpleNumIds);
+            $html .= $this->renderBlock($block, $document, $simpleNumIds, $labels);
         }
 
         return $html;
@@ -75,8 +88,12 @@ final class HtmlWriter implements WriterInterface
     /**
      * @param array<int, bool> $simpleNumIds
      */
-    private function renderBlock(BlockInterface $block, Document $document, array $simpleNumIds): string
-    {
+    private function renderBlock(
+        BlockInterface $block,
+        Document $document,
+        array $simpleNumIds,
+        NumberingLabelMap $labels,
+    ): string {
         if ($block instanceof Heading) {
             $tag = 'h'.$block->level();
 
@@ -84,11 +101,15 @@ final class HtmlWriter implements WriterInterface
         }
 
         if ($block instanceof Paragraph) {
+            if ($this->isLegalNumberedParagraph($block, $simpleNumIds, $labels)) {
+                return $this->renderLegalNumberedParagraph($block, $labels);
+            }
+
             return '<p>'.$this->renderInlines($block->inlines()).'</p>';
         }
 
         if ($block instanceof ListNode) {
-            return $this->renderStructuralList($block, $document, $simpleNumIds);
+            return $this->renderStructuralList($block, $document, $simpleNumIds, $labels);
         }
 
         return '';
@@ -97,8 +118,12 @@ final class HtmlWriter implements WriterInterface
     /**
      * @param array<int, bool> $simpleNumIds
      */
-    private function renderStructuralList(ListNode $list, Document $document, array $simpleNumIds): string
-    {
+    private function renderStructuralList(
+        ListNode $list,
+        Document $document,
+        array $simpleNumIds,
+        NumberingLabelMap $labels,
+    ): string {
         $tag = $list->type() === ListNode::TYPE_UNORDERED ? 'ul' : 'ol';
         $start = $tag === 'ol' && $list->start() !== 1
             ? sprintf(' start="%d"', $list->start())
@@ -106,7 +131,7 @@ final class HtmlWriter implements WriterInterface
         $html = sprintf('<%s%s>', $tag, $start);
 
         foreach ($list->items() as $item) {
-            $html .= '<li>'.$this->renderListItem($item, $document, $simpleNumIds).'</li>';
+            $html .= '<li>'.$this->renderListItem($item, $document, $simpleNumIds, $labels).'</li>';
         }
 
         return $html.sprintf('</%s>', $tag);
@@ -115,8 +140,12 @@ final class HtmlWriter implements WriterInterface
     /**
      * @param array<int, bool> $simpleNumIds
      */
-    private function renderListItem(ListItem $item, Document $document, array $simpleNumIds): string
-    {
+    private function renderListItem(
+        ListItem $item,
+        Document $document,
+        array $simpleNumIds,
+        NumberingLabelMap $labels,
+    ): string {
         $content = $item->content();
         $unwrapLeadingParagraph = isset($content[0])
             && $content[0] instanceof Paragraph
@@ -127,7 +156,7 @@ final class HtmlWriter implements WriterInterface
             if ($index === 0 && $unwrapLeadingParagraph) {
                 $html .= $this->renderInlines($block->inlines());
             } else {
-                $html .= $this->renderBlock($block, $document, $simpleNumIds);
+                $html .= $this->renderBlock($block, $document, $simpleNumIds, $labels);
             }
         }
 
@@ -299,6 +328,43 @@ final class HtmlWriter implements WriterInterface
         $numbering = $paragraph->numbering();
 
         return $numbering !== null && ($simpleNumIds[$numbering->numId()] ?? false);
+    }
+
+    /**
+     * @param array<int, bool> $simpleNumIds
+     */
+    private function isLegalNumberedParagraph(
+        Paragraph $paragraph,
+        array $simpleNumIds,
+        NumberingLabelMap $labels,
+    ): bool {
+        $numbering = $paragraph->numbering();
+
+        return $numbering !== null
+            && array_key_exists($numbering->numId(), $simpleNumIds)
+            && $simpleNumIds[$numbering->numId()] === false
+            && $labels->labelFor($paragraph) !== null;
+    }
+
+    private function renderLegalNumberedParagraph(
+        Paragraph $paragraph,
+        NumberingLabelMap $labels,
+    ): string {
+        $numbering = $paragraph->numbering();
+        $label = $labels->labelFor($paragraph);
+
+        if ($numbering === null || $label === null) {
+            return '<p>'.$this->renderInlines($paragraph->inlines()).'</p>';
+        }
+
+        $prefix = $label === '' ? '' : $this->escape($label).' ';
+
+        return sprintf(
+            '<p class="numbered-paragraph legal-level-%d">%s%s</p>',
+            $numbering->ilvl(),
+            $prefix,
+            $this->renderInlines($paragraph->inlines()),
+        );
     }
 
     /**
