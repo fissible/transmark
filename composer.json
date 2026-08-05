@@ -1,0 +1,33 @@
+{
+    "name": "fissible/transmark",
+    "description": "A pure-PHP document conversion library: a canonical typed document model with faithful multi-level numbering resolution, and pluggable readers/writers for DOCX, Markdown, and HTML - no system binaries required.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["docx", "markdown", "html", "converter", "ooxml", "numbering", "pandoc"],
+    "homepage": "https://github.com/fissible/transmark",
+    "require": {
+        "php": "^8.2",
+        "ext-dom": "*",
+        "ext-zip": "*"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.0",
+        "friendsofphp/php-cs-fixer": "^3.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Fissible\\Transmark\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Fissible\\Transmark\\Tests\\": "tests/"
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "scripts": {
+        "test": "phpunit",
+        "cs": "php-cs-fixer fix --dry-run --diff"
+    }
+}
