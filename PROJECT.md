@@ -144,11 +144,11 @@ proceed in parallel.
 
 | # | Task | Effort | Depends on | Issue | Status |
 |---|------|--------|------------|-------|--------|
-| 1a | `NumberingEngine` core counter/restart resolution loop | M | Numbering data model (done) | [#1](https://github.com/fissible/transmark/issues/1) | Not started |
+| 1a | `NumberingEngine` core counter/restart resolution loop | M | Numbering data model (done) | [#1](https://github.com/fissible/transmark/issues/1) | Done |
 | 1b | `lvlText` templating, `NumberFormat` rendering, `isLgl` | M | #1 | [#2](https://github.com/fissible/transmark/issues/2) | Not started |
 | 1c | Explicit `lvlRestart` (3-state) and per-`numId` start overrides | S | #1, #2 | [#3](https://github.com/fissible/transmark/issues/3) | Not started |
 | 1d | End-to-end engine test suite against committed ground-truth fixtures | S | #1–#3 | [#4](https://github.com/fissible/transmark/issues/4) | Not started |
-| 2a | Shared OOXML package layer (`Ooxml\OoxmlPackage`: zip + DOM, docx/xlsx-agnostic) | S | none | [#5](https://github.com/fissible/transmark/issues/5) | Not started |
+| 2a | Shared OOXML package layer (`Ooxml\OoxmlPackage`: zip + DOM, docx/xlsx-agnostic) | S | none | [#5](https://github.com/fissible/transmark/issues/5) | Done |
 | 2b | `DocxReader`: `word/document.xml` → `Block`/`Inline` tree (uniform `Paragraph`+`NumberingRef`, no classification) | XL | #5 | [#6](https://github.com/fissible/transmark/issues/6) | Not started |
 | 2c | `DocxReader`: `word/numbering.xml` → `NumberingDefinitions` | L | #5 | [#7](https://github.com/fissible/transmark/issues/7) | Not started |
 | 3 | `MarkdownReader`: `league/commonmark` AST → tree (`ListNode`/`ListItem`, never `NumberingRef`) | L | Node taxonomy (done); `league/commonmark` dependency already added | [#8](https://github.com/fissible/transmark/issues/8) | Not started |
@@ -208,15 +208,22 @@ roadmap:
   stubs since their target API surface depends on decisions #9/#10 and
   #5–#7 haven't made yet.
 
-**Next task:** #1 (`NumberingEngine` core resolution loop) or #5 (shared
-OOXML package layer) or #8 (`MarkdownReader`) — all three are unblocked
-leaves and can be picked up in parallel by different contributors. #1 is
-the project's actual differentiator (per earlier design discussion,
-mammoth.js issue #74 is the canonical example of getting this class of bug
-wrong) — give it its own `superpowers:writing-plans` pass before touching
-code even though the counter/restart algorithm is now spike-validated,
-since translating a prototype into a properly tested, PSR-12-clean
-implementation is still real design work.
+**Completed (2026-08-05, via PR #15, merged to `main`):** #1 (`NumberingEngine`
+core counter/restart resolution loop — all 6 acceptance criteria verified
+by `tests/Numbering/NumberingEngineTest.php`, naive decimal-join label
+rendering, #2's scope) and #5 (`Ooxml\OoxmlPackage` — `open()`/`part()`/
+`rawPart()`/`close()`, built via subagent-driven development with a final
+whole-branch review fix wave, then manually verified against a real
+Word-generated `.docx` in addition to the fixture-based test suite).
+Full suite: 24/24 passing on `main`.
+
+**Next task:** now that #1 and #5 are both done, the newly unblocked
+leaves are #2 (`lvlText` templating/`NumberFormat` rendering/`isLgl` —
+continues the `NumberingEngine` chain, blocks #3/#4/#10), #6 and #7
+(`DocxReader`, both now unblocked by #5 and independent of each other and
+of #1–#4), and #8 (`MarkdownReader`, still independently unblocked). All
+four can proceed in parallel; #2 is the smallest (M) and most natural
+continuation of the branch just merged.
 
 **Decisions made this session:** repo stays **private** until enough issues
 exist to give the public release some depth (explicit user request) — don't
