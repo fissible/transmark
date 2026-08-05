@@ -46,17 +46,44 @@ final class NumberingEngine implements NumberingEngineInterface
                 }
             }
 
-            $labelParts = [];
-            for ($ancestorIlvl = 0; $ancestorIlvl <= $ilvl; ++$ancestorIlvl) {
-                if (isset($counters[$numId][$ancestorIlvl])) {
-                    $labelParts[] = (string) $counters[$numId][$ancestorIlvl];
-                }
-            }
-
-            $labels[spl_object_id($paragraph)] = implode('.', $labelParts);
+            $labels[spl_object_id($paragraph)] = $this->renderLabel(
+                $document->numbering(),
+                $numId,
+                $level,
+                $counters[$numId],
+            );
         }
 
         return new NumberingLabelMap($labels);
+    }
+
+    /**
+     * @param array<int, int> $counters
+     */
+    private function renderLabel(
+        NumberingDefinitions $definitions,
+        int $numId,
+        Level $currentLevel,
+        array $counters,
+    ): string {
+        return preg_replace_callback(
+            '/%(\d)/',
+            static function (array $matches) use ($definitions, $numId, $currentLevel, $counters): string {
+                $referencedIlvl = ((int) $matches[1]) - 1;
+                $referencedLevel = $definitions->levelFor($numId, $referencedIlvl);
+
+                if ($referencedLevel === null || !array_key_exists($referencedIlvl, $counters)) {
+                    return '';
+                }
+
+                $format = $currentLevel->isLegal()
+                    ? NumberFormat::Decimal
+                    : $referencedLevel->format();
+
+                return $format->render($counters[$referencedIlvl]);
+            },
+            $currentLevel->lvlText(),
+        ) ?? $currentLevel->lvlText();
     }
 
     /**
