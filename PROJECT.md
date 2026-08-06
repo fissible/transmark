@@ -73,14 +73,14 @@ changes.
   format-agnostic `Ooxml\OoxmlPackage` (#5) shared with the future
   `transmark-xlsx` package.
 
-## Status: DOCX to HTML core complete
+## Status: DOCX to HTML and Markdown I/O core complete
 
 The canonical model, full numbering engine, OOXML package layer,
-`DocxReader`, and both `HtmlWriter` numbering paths are implemented. The
-ground-truth fixtures verify simple nested lists and genuine legal outlines
-end to end from `word/document.xml` + `word/numbering.xml` to semantic HTML.
-The remaining core roadmap starts with Markdown support (#8, #11) and the
-semantic-idempotence harness (#12).
+`DocxReader`, `MarkdownReader`, `HtmlWriter`, and `MarkdownWriter` are
+implemented. Ground-truth fixtures verify simple nested lists and genuine
+legal outlines end to end, while Markdown support maps CommonMark/GFM ASTs
+without introducing Word numbering references. The remaining core roadmap is
+the semantic-idempotence harness (#12).
 
 ```
 src/
@@ -103,8 +103,8 @@ src/
 │                     LineBreak, Code, Footnote, Comment
 ├── Numbering/        # definitions, formats, restart rules, engine + label map
 ├── Ooxml/            # shared zip + DOM package layer
-├── Readers/          # DocxReader (MarkdownReader is #8)
-└── Writers/          # HtmlWriter (MarkdownWriter is #11)
+├── Readers/          # DocxReader, MarkdownReader
+└── Writers/          # HtmlWriter, MarkdownWriter
 
 tests/fixtures/numbering/
 ├── README.md                  # provenance + expected labels for both fixtures
@@ -126,10 +126,10 @@ get its own TDD implementation plan (`superpowers:writing-plans` +
 requirements/spike pass — see the design decisions above and each issue's
 own body for full context, acceptance criteria, and test suites.
 
-The DOCX-to-HTML dependency chain is complete. MarkdownReader (#8) is the
-next unblocked core task; MarkdownWriter (#11) follows it, then the
-round-trip harness (#12). The adapter-package stubs (#13/#14) can now be
-re-scoped against the implemented HTML and OOXML conventions.
+The DOCX-to-HTML and Markdown reader/writer chains are complete. The
+round-trip harness (#12) is the next unblocked core task. The adapter-package
+stubs (#13/#14) can now be re-scoped against the implemented HTML and OOXML
+conventions.
 
 | # | Task | Effort | Depends on | Issue | Status |
 |---|------|--------|------------|-------|--------|
@@ -140,10 +140,10 @@ re-scoped against the implemented HTML and OOXML conventions.
 | 2a | Shared OOXML package layer (`Ooxml\OoxmlPackage`: zip + DOM, docx/xlsx-agnostic) | S | none | [#5](https://github.com/fissible/transmark/issues/5) | Done |
 | 2b | `DocxReader`: `word/document.xml` → `Block`/`Inline` tree (uniform `Paragraph`+`NumberingRef`, no classification) | XL | #5 | [#6](https://github.com/fissible/transmark/issues/6) | Done |
 | 2c | `DocxReader`: `word/numbering.xml` → `NumberingDefinitions` | L | #5 | [#7](https://github.com/fissible/transmark/issues/7) | Done |
-| 3 | `MarkdownReader`: `league/commonmark` AST → tree (`ListNode`/`ListItem`, never `NumberingRef`) | L | Node taxonomy (done); `league/commonmark` dependency already added | [#8](https://github.com/fissible/transmark/issues/8) | Not started |
+| 3 | `MarkdownReader`: `league/commonmark` AST → tree (`ListNode`/`ListItem`, never `NumberingRef`) | L | Node taxonomy (done); `league/commonmark` dependency already added | [#8](https://github.com/fissible/transmark/issues/8) | Done |
 | 4a | `HtmlWriter`: semantic `<ol>`/`<ul>` for `ListNode` trees + "simple" `numId` runs | M | none for `ListNode`; #6/#7 for the numbered-paragraph case | [#9](https://github.com/fissible/transmark/issues/9) | Done |
 | 4b | `HtmlWriter`: flat + literal-label strategy for "legal" `numId` runs | M | #1–#4, #9 (classification logic) | [#10](https://github.com/fissible/transmark/issues/10) | Done |
-| 5 | `MarkdownWriter`: tree → Markdown, reusing #9/#10's simple-vs-legal classification | M | #8 (node coverage); #1–#4 and #9/#10 (classification) for numbered-paragraph fallback | [#11](https://github.com/fissible/transmark/issues/11) | Not started |
+| 5 | `MarkdownWriter`: tree → Markdown, reusing #9/#10's simple-vs-legal classification | M | #8 (node coverage); #1–#4 and #9/#10 (classification) for numbered-paragraph fallback | [#11](https://github.com/fissible/transmark/issues/11) | Done |
 | 6 | Semantic-idempotence test harness: hand-write ASTs, round-trip through each reader/writer pair, assert tree equality (with explicit "expected lossy" markers, e.g. legal outlines through Markdown) | M | #8, #11 (minimum, Markdown ⇄ Markdown) | [#12](https://github.com/fissible/transmark/issues/12) | Not started |
 | 7 | `fissible/transmark-blade` (separate package, stub only — re-scope once #9/#10's `HtmlWriter` output conventions settle) | M (re-scope pending) | #9, #10 | [#13](https://github.com/fissible/transmark/issues/13) | Stub — needs re-scoping |
 | 8 | `fissible/transmark-xlsx` (separate package, stub only — re-scope once `OoxmlPackage` is validated by real usage) | XL (re-scope pending) | #5 (and validation from #6/#7) | [#14](https://github.com/fissible/transmark/issues/14) | Stub — needs re-scoping |
@@ -211,8 +211,7 @@ validated the full numbering semantics, DOCX package/reader pipeline, and
 HTML writer's native-simple-list and literal-legal-outline paths. The core
 DOCX-to-HTML value proposition is ready for the v0.2.0 developer preview.
 
-**Next task:** #8 (`MarkdownReader`), followed by #11 (`MarkdownWriter`) and
-#12 (semantic-idempotence round-trip harness).
+**Next task:** #12 (semantic-idempotence round-trip harness).
 
 **Release decision:** publish the repository and cut v0.2.0 as a pre-alpha
 developer preview. Packagist publication is a separate final step.
