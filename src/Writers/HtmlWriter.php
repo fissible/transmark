@@ -22,10 +22,10 @@ use Fissible\Transmark\Nodes\Inline\Subscript;
 use Fissible\Transmark\Nodes\Inline\Superscript;
 use Fissible\Transmark\Nodes\Inline\Text;
 use Fissible\Transmark\Nodes\Inline\Underline;
-use Fissible\Transmark\Numbering\Level;
 use Fissible\Transmark\Numbering\NumberFormat;
 use Fissible\Transmark\Numbering\NumberingEngine;
 use Fissible\Transmark\Numbering\NumberingLabelMap;
+use Fissible\Transmark\Numbering\NumberingShapeClassifier;
 
 /**
  * Legal-outline paragraphs use the classes "numbered-paragraph" and
@@ -40,7 +40,7 @@ final class HtmlWriter implements WriterInterface
         return $this->renderBlocks(
             $document->content(),
             $document,
-            $this->classifySimpleNumIds($document),
+            (new NumberingShapeClassifier())->classify($document),
             $labels,
         );
     }
@@ -269,55 +269,6 @@ final class HtmlWriter implements WriterInterface
             NumberFormat::UpperRoman => 'upper-roman',
             default => null,
         };
-    }
-
-    /**
-     * @return array<int, bool>
-     */
-    private function classifySimpleNumIds(Document $document): array
-    {
-        $usedLevels = [];
-
-        foreach ($document->content() as $block) {
-            if (!$block instanceof Paragraph || $block->numbering() === null) {
-                continue;
-            }
-
-            $numbering = $block->numbering();
-            $usedLevels[$numbering->numId()][$numbering->ilvl()] = true;
-        }
-
-        $classifications = [];
-        foreach ($usedLevels as $numId => $levels) {
-            $classifications[$numId] = true;
-
-            foreach (array_keys($levels) as $ilvl) {
-                $level = $document->numbering()->levelFor($numId, $ilvl);
-
-                if ($level === null || !$this->isSimpleLevel($level)) {
-                    $classifications[$numId] = false;
-                    break;
-                }
-            }
-        }
-
-        return $classifications;
-    }
-
-    private function isSimpleLevel(Level $level): bool
-    {
-        if ($level->isLegal() || $level->format() === NumberFormat::None) {
-            return false;
-        }
-
-        $placeholderCount = preg_match_all('/%([1-9])/', $level->lvlText(), $matches);
-
-        if ($level->format() === NumberFormat::Bullet) {
-            return $placeholderCount === 0;
-        }
-
-        return $placeholderCount === 1
-            && (int) $matches[1][0] === $level->ilvl() + 1;
     }
 
     /**

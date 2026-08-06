@@ -5,9 +5,9 @@ document model, with faithful multi-level numbering resolution and
 pluggable readers/writers for DOCX, Markdown, and HTML — no system
 binaries required.
 
-> **Status: pre-alpha.** The document model, numbering engine, DOCX reader,
-> and HTML writer are implemented. Markdown support and broader node coverage
-> remain on the roadmap. Not yet published to Packagist.
+> **Status: pre-alpha.** The document model, numbering engine, DOCX and
+> Markdown readers, and HTML and Markdown writers are implemented. Broader
+> node coverage and semantic round-trip verification remain on the roadmap.
 
 ## Why
 
@@ -66,8 +66,6 @@ numbering level, so consumers can style each indentation depth.
 
 ## Installation
 
-Not yet published. Once tagged and released:
-
 ```bash
 composer require fissible/transmark
 ```
@@ -89,6 +87,26 @@ $html = (new HtmlWriter())->write($document);
 `DocxReader` currently covers paragraphs, headings, core inline formatting,
 and Word numbering definitions. See the pre-alpha status above and roadmap for
 unsupported document features.
+
+## Markdown
+
+Markdown uses `league/commonmark` for standards-compliant parsing, including
+GFM strikethrough and tables:
+
+```php
+use Fissible\Transmark\Readers\MarkdownReader;
+use Fissible\Transmark\Writers\MarkdownWriter;
+
+$document = (new MarkdownReader())->read($markdown);
+$markdown = (new MarkdownWriter())->write($document);
+```
+
+Structural lists serialize as native Markdown lists. Word legal outlines have
+no native Markdown equivalent, so `MarkdownWriter` emits their computed labels
+as literal text. Underline, superscript, and subscript use raw inline HTML.
+Those conversions are deliberately lossy: reading the Markdown back preserves
+the visible text, but cannot reconstruct the original OOXML numbering or
+formatting metadata.
 
 ## Contributing
 
