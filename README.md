@@ -72,11 +72,32 @@ Not yet published. Once tagged and released:
 composer require fissible/transmark
 ```
 
+## DOCX to HTML
+
+Readers accept document bytes and return the canonical tree; writers serialize
+that tree into the target format:
+
+```php
+use Fissible\Transmark\Readers\DocxReader;
+use Fissible\Transmark\Writers\HtmlWriter;
+
+$docx = file_get_contents('/path/to/document.docx');
+$document = (new DocxReader())->read($docx);
+$html = (new HtmlWriter())->write($document);
+```
+
+`DocxReader` currently covers paragraphs, headings, core inline formatting,
+and Word numbering definitions. See the pre-alpha status above and roadmap for
+unsupported document features.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for commit conventions, branching,
 and the TDD workflow, and [PROJECT.md](PROJECT.md) for the current roadmap
 and open issues.
+
+Security vulnerabilities should be reported privately according to
+[SECURITY.md](SECURITY.md), not opened as public issues.
 
 ## License
 
