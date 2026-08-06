@@ -144,7 +144,7 @@ conventions.
 | 4a | `HtmlWriter`: semantic `<ol>`/`<ul>` for `ListNode` trees + "simple" `numId` runs | M | none for `ListNode`; #6/#7 for the numbered-paragraph case | [#9](https://github.com/fissible/transmark/issues/9) | Done |
 | 4b | `HtmlWriter`: flat + literal-label strategy for "legal" `numId` runs | M | #1–#4, #9 (classification logic) | [#10](https://github.com/fissible/transmark/issues/10) | Done |
 | 5 | `MarkdownWriter`: tree → Markdown, reusing #9/#10's simple-vs-legal classification | M | #8 (node coverage); #1–#4 and #9/#10 (classification) for numbered-paragraph fallback | [#11](https://github.com/fissible/transmark/issues/11) | Done |
-| 6 | Semantic-idempotence test harness: hand-write ASTs, round-trip through each reader/writer pair, assert tree equality (with explicit "expected lossy" markers, e.g. legal outlines through Markdown) | M | #8, #11 (minimum, Markdown ⇄ Markdown) | [#12](https://github.com/fissible/transmark/issues/12) | Not started |
+| 6 | Semantic-idempotence test harness: hand-write ASTs, round-trip through each reader/writer pair, assert tree equality (with explicit "expected lossy" markers, e.g. legal outlines through Markdown) | M | #8, #11 (minimum, Markdown ⇄ Markdown) | [#12](https://github.com/fissible/transmark/issues/12) | Done |
 | 7 | `fissible/transmark-blade` (separate package, stub only — re-scope once #9/#10's `HtmlWriter` output conventions settle) | M (re-scope pending) | #9, #10 | [#13](https://github.com/fissible/transmark/issues/13) | Stub — needs re-scoping |
 | 8 | `fissible/transmark-xlsx` (separate package, stub only — re-scope once `OoxmlPackage` is validated by real usage) | XL (re-scope pending) | #5 (and validation from #6/#7) | [#14](https://github.com/fissible/transmark/issues/14) | Stub — needs re-scoping |
 
@@ -211,7 +211,8 @@ validated the full numbering semantics, DOCX package/reader pipeline, and
 HTML writer's native-simple-list and literal-legal-outline paths. The core
 DOCX-to-HTML value proposition is ready for the v0.2.0 developer preview.
 
-**Next task:** #12 (semantic-idempotence round-trip harness).
+**Next task:** Re-scope the downstream adapter-package stubs (#13/#14) or
+add the planned native `DocxWriter` roadmap item.
 
 **Release decision:** publish the repository and cut v0.2.0 as a pre-alpha
 developer preview. Packagist publication is a separate final step.
