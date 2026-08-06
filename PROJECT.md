@@ -81,9 +81,9 @@ The canonical model, full numbering engine, OOXML package layer,
 lists and genuine legal outlines end to end, while Markdown support maps
 CommonMark/GFM ASTs without introducing Word numbering references.
 `DocxWriter` serializes the canonical tree into a native OOXML package without
-another dependency; its final external Microsoft Word or LibreOffice smoke is
-still pending. The semantic-idempotence harness (#12) was merged only into its
-stacked feature base and still needs a recovery PR to reach `main`.
+another dependency and has been independently opened in LibreOffice. The
+semantic-idempotence harness (#12) is being recovered from its stacked feature
+base and extended to cover both Markdown and DOCX reader/writer pairs.
 
 ```
 src/
@@ -129,11 +129,10 @@ get its own TDD implementation plan (`superpowers:writing-plans` +
 requirements/spike pass — see the design decisions above and each issue's
 own body for full context, acceptance criteria, and test suites.
 
-The DOCX-to-HTML and Markdown reader/writer chains are complete, and native
-DOCX output (#27) is in progress. The round-trip harness (#12) also needs its
-already-written commit recovered onto `main`. The adapter-package stubs
-(#13/#14) can now be re-scoped against the implemented HTML and OOXML
-conventions.
+The DOCX, HTML, and Markdown reader/writer chains are complete. The round-trip
+harness (#12) is in progress, combining its recovered Markdown coverage with
+new DOCX semantic-idempotence cases. The adapter-package stubs (#13/#14) can
+now be re-scoped against the implemented HTML and OOXML conventions.
 
 | # | Task | Effort | Depends on | Issue | Status |
 |---|------|--------|------------|-------|--------|
@@ -144,12 +143,12 @@ conventions.
 | 2a | Shared OOXML package layer (`Ooxml\OoxmlPackage`: zip + DOM, docx/xlsx-agnostic) | S | none | [#5](https://github.com/fissible/transmark/issues/5) | Done |
 | 2b | `DocxReader`: `word/document.xml` → `Block`/`Inline` tree (uniform `Paragraph`+`NumberingRef`, no classification) | XL | #5 | [#6](https://github.com/fissible/transmark/issues/6) | Done |
 | 2c | `DocxReader`: `word/numbering.xml` → `NumberingDefinitions` | L | #5 | [#7](https://github.com/fissible/transmark/issues/7) | Done |
-| 2d | `DocxWriter`: canonical tree → native OOXML package | XL | Canonical model; #6/#7 for round-trip validation | [#27](https://github.com/fissible/transmark/issues/27) | In progress — implementation/tests complete; Word/LibreOffice smoke pending |
+| 2d | `DocxWriter`: canonical tree → native OOXML package | XL | Canonical model; #6/#7 for round-trip validation | [#27](https://github.com/fissible/transmark/issues/27) | Done |
 | 3 | `MarkdownReader`: `league/commonmark` AST → tree (`ListNode`/`ListItem`, never `NumberingRef`) | L | Node taxonomy (done); `league/commonmark` dependency already added | [#8](https://github.com/fissible/transmark/issues/8) | Done |
 | 4a | `HtmlWriter`: semantic `<ol>`/`<ul>` for `ListNode` trees + "simple" `numId` runs | M | none for `ListNode`; #6/#7 for the numbered-paragraph case | [#9](https://github.com/fissible/transmark/issues/9) | Done |
 | 4b | `HtmlWriter`: flat + literal-label strategy for "legal" `numId` runs | M | #1–#4, #9 (classification logic) | [#10](https://github.com/fissible/transmark/issues/10) | Done |
 | 5 | `MarkdownWriter`: tree → Markdown, reusing #9/#10's simple-vs-legal classification | M | #8 (node coverage); #1–#4 and #9/#10 (classification) for numbered-paragraph fallback | [#11](https://github.com/fissible/transmark/issues/11) | Done |
-| 6 | Semantic-idempotence test harness: hand-write ASTs, round-trip through each reader/writer pair, assert tree equality (with explicit "expected lossy" markers, e.g. legal outlines through Markdown) | M | #8, #11 (minimum, Markdown ⇄ Markdown) | [#12](https://github.com/fissible/transmark/issues/12) | Not started |
+| 6 | Semantic-idempotence test harness: hand-write ASTs, round-trip through each reader/writer pair, assert tree equality (with explicit "expected lossy" markers, e.g. legal outlines through Markdown) | M | #8, #11 (minimum, Markdown ⇄ Markdown); #27 for DOCX ⇄ DOCX | [#12](https://github.com/fissible/transmark/issues/12) | In progress |
 | 7 | `fissible/transmark-blade` (separate package, stub only — re-scope once #9/#10's `HtmlWriter` output conventions settle) | M (re-scope pending) | #9, #10 | [#13](https://github.com/fissible/transmark/issues/13) | Stub — needs re-scoping |
 | 8 | `fissible/transmark-xlsx` (separate package, stub only — re-scope once `OoxmlPackage` is validated by real usage) | XL (re-scope pending) | #5 (and validation from #6/#7) | [#14](https://github.com/fissible/transmark/issues/14) | Stub — needs re-scoping |
 
@@ -216,14 +215,10 @@ validated the full numbering semantics, DOCX package/reader pipeline, and
 HTML writer's native-simple-list and literal-legal-outline paths. The core
 DOCX-to-HTML value proposition is ready for the v0.2.0 developer preview.
 
-**Next tasks:** finish #27's external Word/LibreOffice smoke, then recover #12's
-already-written round-trip harness commit onto `main`.
+**Next task:** Complete #12's Markdown and DOCX semantic-idempotence harness,
+then re-scope the downstream adapter-package stubs (#13/#14).
 
 **Release decision:** publish the repository and cut v0.2.0 as a pre-alpha
 developer preview. Packagist publication is a separate final step.
 
-**Blockers:** Microsoft Word and LibreOffice are not installed in the current
-development environment, so #27's named independent-consumer acceptance smoke
-cannot be completed locally. Pandoc independently opened and extracted the
-generated acceptance document successfully; Word/LibreOffice remains the
-release boundary.
+**Blockers:** none.
