@@ -91,9 +91,15 @@ changes.
     conversions already in this document.
 - **PDF export is a first-class API in a satellite package, not a docs
   recipe** (#39, supersedes #36): `fissible/transmark-pdf` will provide
-  `PdfWriter`, composing `HtmlWriter` output with `mpdf/mpdf` (pure-PHP,
-  well-maintained, non-competing single-direction HTML→PDF renderer)
-  rather than building a PDF renderer or shelling out to a binary. This
+  `PdfWriter`, composing `HtmlWriter` output with `dompdf/dompdf`
+  (pure-PHP, LGPL-2.1, non-competing single-direction HTML→PDF renderer)
+  rather than building a PDF renderer or shelling out to a binary. `mpdf`
+  was the initial pick but was reversed after checking licenses: `mpdf`
+  is GPL-2.0-only (a real concern for a dependency library meant to be
+  composed into other people's — possibly proprietary — apps) and
+  requires `ext-gd`, reintroducing the image-processing-extension
+  dependency class already declined elsewhere (#32's WMF/EMF non-goal).
+  `dompdf` (LGPL-2.1, `ext-mbstring` only) avoids both. This
   follows the same satellite-package precedent as #13/#14
   (`transmark-blade`/`transmark-xlsx`): core `transmark` stays
   dependency-free, but a consumer wanting DOCX→HTML *and* HTML→PDF gets
@@ -188,7 +194,7 @@ against the implemented HTML and OOXML conventions.
 | 11 | `HtmlWriter`: table support | S | `Table` node taxonomy (done); not blocked by #31 | [#33](https://github.com/fissible/transmark/issues/33) | Not started |
 | 12 | `HtmlWriter`: image embedding (base64 data-URI, no image-processing deps) | S | `Image` node taxonomy (done); not blocked by #32 | [#34](https://github.com/fissible/transmark/issues/34) | Not started |
 | 13 | `Ooxml` zip-backend evaluation: `ext-zip` vs pure-PHP `nelexa/zip` (spike/decision, not a migration) | S | none | [#35](https://github.com/fissible/transmark/issues/35) | Not started |
-| 14 | `fissible/transmark-pdf` (separate package): `PdfWriter` composing `HtmlWriter` output with `mpdf/mpdf`, mirroring #13/#14's satellite-package pattern | L | `HtmlWriter` (done) | [#39](https://github.com/fissible/transmark/issues/39) | Not started |
+| 14 | `fissible/transmark-pdf` (separate package): `PdfWriter` composing `HtmlWriter` output with `dompdf/dompdf`, mirroring #13/#14's satellite-package pattern | L | `HtmlWriter` (done) | [#39](https://github.com/fissible/transmark/issues/39) | Not started |
 | 15 | CLI wrapper (`bin/transmark convert`) for reader/writer conversions | S | at least one reader/writer pair (done) | [#37](https://github.com/fissible/transmark/issues/37) | Not started |
 
 ## Session handoff notes
@@ -284,9 +290,11 @@ declined RTF/templating/WMF-EMF (see design decisions above).
 satellite package, `fissible/transmark-pdf` (#39), mirroring #13/#14's
 pattern — driven by a real consumer need (a legal-acknowledgement
 DOCX→HTML→PDF workflow) wanting one Composer requirement, not two, even
-though `fissible/transmark` is transitively implied either way. `mpdf` is
-the recommended rendering engine over `dompdf` for its stronger CSS/
-pagination/header-footer support.
+though `fissible/transmark` is transitively implied either way. Initially
+recommended `mpdf` for its stronger CSS/pagination/header-footer support,
+but reversed after checking licenses: `mpdf` is GPL-2.0-only and requires
+`ext-gd`; `dompdf` (LGPL-2.1, `ext-mbstring` only) is the safer default
+for a dependency library meant to be composed into other apps.
 
 **Next task:** #31 and #32 (`DocxReader` table + image support) close the
 gap the semantic-idempotence harness already documents as lossy; #33/#34
