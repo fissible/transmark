@@ -73,6 +73,38 @@ changes.
   format-agnostic `Ooxml\OoxmlPackage` (#5) shared with the future
   `transmark-xlsx` package.
 
+**Added after the PHP-ecosystem competitive landscape review (2026-08-06):**
+
+- **RTF, DOCX templating/mail-merge, and WMF/EMF image conversion are
+  explicitly out of scope**, not tracked as backlog issues:
+  - RTF has no actively-maintained pure-PHP parser to build on, and its
+    real-world relevance is declining — a hand-rolled control-word
+    tokenizer is real, uncertain-payoff effort. Revisit only if a
+    concrete need appears.
+  - DOCX templating/mail-merge is orthogonal to this project's
+    "converter" positioning — PHPWord/phpdocx do this because they're
+    document *authoring* tools; this project isn't one.
+  - WMF/EMF vector-image conversion needs real image-processing tooling
+    (`ext-gd`/`ext-imagick`), which this project has chosen not to
+    depend on (see #32's non-goal). Treated as a documented,
+    explicit lossy/unsupported case, same as other "expected lossy"
+    conversions already in this document.
+- **PDF export is a first-class API in a satellite package, not a docs
+  recipe** (#39, supersedes #36): `fissible/transmark-pdf` will provide
+  `PdfWriter`, composing `HtmlWriter` output with `mpdf/mpdf` (pure-PHP,
+  well-maintained, non-competing single-direction HTML→PDF renderer)
+  rather than building a PDF renderer or shelling out to a binary. This
+  follows the same satellite-package precedent as #13/#14
+  (`transmark-blade`/`transmark-xlsx`): core `transmark` stays
+  dependency-free, but a consumer wanting DOCX→HTML *and* HTML→PDF gets
+  one real requirement (`fissible/transmark-pdf`), with `fissible/transmark`
+  resolved transitively — not two separate integrations to wire up
+  themselves.
+- **`ext-zip` is the one place the "no system binaries" pitch is
+  narrower than it sounds** — it's an optional PHP extension, not
+  universal. #35 tracks evaluating a pure-PHP alternative
+  (`nelexa/zip`) as a spike/decision, not a committed migration.
+
 ## Status: DOCX, HTML, and Markdown semantic I/O core complete
 
 The canonical model, full numbering engine, OOXML package layer,
@@ -151,6 +183,13 @@ against the implemented HTML and OOXML conventions.
 | 6 | Semantic-idempotence test harness: hand-write ASTs, round-trip through each reader/writer pair, assert tree equality (with explicit "expected lossy" markers, e.g. legal outlines through Markdown) | M | #8, #11 (minimum, Markdown ⇄ Markdown); #27 for DOCX ⇄ DOCX | [#12](https://github.com/fissible/transmark/issues/12) | Done |
 | 7 | `fissible/transmark-blade` (separate package, stub only — re-scope once #9/#10's `HtmlWriter` output conventions settle) | M (re-scope pending) | #9, #10 | [#13](https://github.com/fissible/transmark/issues/13) | Stub — needs re-scoping |
 | 8 | `fissible/transmark-xlsx` (separate package, stub only — re-scope once `OoxmlPackage` is validated by real usage) | XL (re-scope pending) | #5 (and validation from #6/#7) | [#14](https://github.com/fissible/transmark/issues/14) | Stub — needs re-scoping |
+| 9 | `DocxReader`: table support (`w:tbl` → `Table`/`TableRow`/`TableCell`) | M | #6, #7 | [#31](https://github.com/fissible/transmark/issues/31) | Not started |
+| 10 | `DocxReader`: image pass-through (`w:drawing` media extraction, no image-processing deps; WMF/EMF explicitly out of scope) | M | #5, #6 | [#32](https://github.com/fissible/transmark/issues/32) | Not started |
+| 11 | `HtmlWriter`: table support | S | `Table` node taxonomy (done); not blocked by #31 | [#33](https://github.com/fissible/transmark/issues/33) | Not started |
+| 12 | `HtmlWriter`: image embedding (base64 data-URI, no image-processing deps) | S | `Image` node taxonomy (done); not blocked by #32 | [#34](https://github.com/fissible/transmark/issues/34) | Not started |
+| 13 | `Ooxml` zip-backend evaluation: `ext-zip` vs pure-PHP `nelexa/zip` (spike/decision, not a migration) | S | none | [#35](https://github.com/fissible/transmark/issues/35) | Not started |
+| 14 | `fissible/transmark-pdf` (separate package): `PdfWriter` composing `HtmlWriter` output with `mpdf/mpdf`, mirroring #13/#14's satellite-package pattern | L | `HtmlWriter` (done) | [#39](https://github.com/fissible/transmark/issues/39) | Not started |
+| 15 | CLI wrapper (`bin/transmark convert`) for reader/writer conversions | S | at least one reader/writer pair (done) | [#37](https://github.com/fissible/transmark/issues/37) | Not started |
 
 ## Session handoff notes
 
@@ -228,10 +267,35 @@ list flattening, link/code presentation loss, styled code-block conversion,
 the current table-reader gap, and omitted metadata/attributes. Full suite:
 236 tests / 869 assertions on PHP 8.3 and 8.4.
 
-**Next task:** Merge #12 and cut v0.3.0, then re-scope the downstream
-adapter-package stubs (#13/#14).
+**Completed (2026-08-06/07):** Ran a PHP-ecosystem competitive landscape
+review against `phpoffice/phpword`, `phpdocx`, and `pandoc` (validated via
+direct source/composer.json reads and live GitHub issue searches, not
+assumption — see conversation history). Confirmed `transmark`'s one clear
+differentiator (`w:isLgl` legal-outline numbering fidelity: PHPWord's
+reader never touches it, pandoc has open restart/continuation bugs on it)
+and identified genuine gaps against every incumbent: tables, images,
+PDF export, and a CLI. Filed #31–#37 for the achievable subset (table and
+image support for `DocxReader`/`HtmlWriter`, a zip-backend evaluation
+spike, a PDF composition-recipe doc, a CLI wrapper) and explicitly
+declined RTF/templating/WMF-EMF (see design decisions above).
 
-**Release decision:** Cut v0.3.0 after #12 merges, bundling native DOCX output
-and the cross-format semantic-idempotence contract.
+**Completed (2026-08-07):** Re-scoped PDF export from a docs-only recipe
+(#36, closed as superseded) to a first-class `PdfWriter` API in a new
+satellite package, `fissible/transmark-pdf` (#39), mirroring #13/#14's
+pattern — driven by a real consumer need (a legal-acknowledgement
+DOCX→HTML→PDF workflow) wanting one Composer requirement, not two, even
+though `fissible/transmark` is transitively implied either way. `mpdf` is
+the recommended rendering engine over `dompdf` for its stronger CSS/
+pagination/header-footer support.
+
+**Next task:** #31 and #32 (`DocxReader` table + image support) close the
+gap the semantic-idempotence harness already documents as lossy; #33/#34
+are their `HtmlWriter`-side counterparts and can proceed in parallel.
+#35 (zip-backend evaluation) and #39 (`transmark-pdf` scaffold) are
+independent, pick-up-anytime tasks. #37 (CLI) benefits from at least
+tables/images landing first but isn't blocked on them.
+
+**Release decision:** v0.3.0 shipped (native DOCX output + cross-format
+semantic-idempotence contract). No release currently pending.
 
 **Blockers:** none.
