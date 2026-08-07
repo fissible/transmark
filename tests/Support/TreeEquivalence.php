@@ -48,10 +48,14 @@ final class TreeEquivalence
         );
     }
 
+    /**
+     * @param callable(Document): void $assertExpectedResult
+     */
     public static function assertExpectedLoss(
         Document $expected,
         Document $actual,
         string $reason,
+        callable $assertExpectedResult,
     ): void {
         if (trim($reason) === '') {
             throw new \InvalidArgumentException('Expected-loss assertions require a documented reason.');
@@ -62,6 +66,8 @@ final class TreeEquivalence
             self::document($actual),
             'Expected a documented lossy conversion: '.$reason,
         );
+
+        $assertExpectedResult($actual);
     }
 
     /**

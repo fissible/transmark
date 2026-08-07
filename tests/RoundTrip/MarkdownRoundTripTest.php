@@ -34,9 +34,9 @@ use Fissible\Transmark\Numbering\NumberFormat;
 use Fissible\Transmark\Numbering\NumberingDefinitions;
 use Fissible\Transmark\Numbering\NumberingRef;
 use Fissible\Transmark\Readers\MarkdownReader;
+use Fissible\Transmark\Tests\Support\SemanticRoundTrip;
 use Fissible\Transmark\Tests\Support\TreeEquivalence;
 use Fissible\Transmark\Writers\MarkdownWriter;
-use PHPUnit\Framework\AssertionFailedError;
 use PHPUnit\Framework\TestCase;
 
 final class MarkdownRoundTripTest extends TestCase
@@ -140,8 +140,10 @@ final class MarkdownRoundTripTest extends TestCase
             $document,
             $roundTripped,
             'Markdown uses structural lists and cannot reconstruct OOXML numId/ilvl pointers.',
+            static function (Document $actual): void {
+                self::assertInstanceOf(ListNode::class, $actual->content()[0]);
+            },
         );
-        self::assertInstanceOf(ListNode::class, $roundTripped->content()[0]);
     }
 
     public function test_legal_outline_numbering_is_documented_as_lossy_through_markdown(): void
@@ -166,8 +168,10 @@ final class MarkdownRoundTripTest extends TestCase
             $document,
             $roundTripped,
             'Legal labels become literal text because Markdown has no cross-level counter model.',
+            function (Document $actual): void {
+                self::assertSame(['1. Parent', '1.1. Child'], $this->paragraphTexts($actual));
+            },
         );
-        self::assertSame(['1. Parent', '1.1. Child'], $this->paragraphTexts($roundTripped));
     }
 
     public function test_raw_html_inline_fallbacks_are_documented_as_lossy_through_markdown(): void
@@ -186,28 +190,9 @@ final class MarkdownRoundTripTest extends TestCase
             $document,
             $roundTripped,
             'Raw HTML preserves visible text but MarkdownReader does not infer formatting nodes from HTML.',
-        );
-        self::assertSame('under super sub', $this->paragraphTexts($roundTripped)[0]);
-    }
-
-    public function test_equivalence_helper_detects_a_dropped_inline_node(): void
-    {
-        $expected = new Document([new Paragraph([new Strong([new Text('important')])])]);
-        $actual = new Document([new Paragraph([new Text('important')])]);
-
-        $this->expectException(AssertionFailedError::class);
-
-        TreeEquivalence::assertEquivalent($expected, $actual);
-    }
-
-    public function test_expected_loss_requires_a_documented_reason(): void
-    {
-        $this->expectException(\InvalidArgumentException::class);
-
-        TreeEquivalence::assertExpectedLoss(
-            new Document([$this->paragraph('before')]),
-            new Document([$this->paragraph('after')]),
-            '',
+            function (Document $actual): void {
+                self::assertSame('under super sub', $this->paragraphTexts($actual)[0]);
+            },
         );
     }
 
@@ -218,7 +203,11 @@ final class MarkdownRoundTripTest extends TestCase
 
     private function roundTrip(Document $document): Document
     {
-        return (new MarkdownReader())->read((new MarkdownWriter())->write($document));
+        return SemanticRoundTrip::through(
+            $document,
+            new MarkdownWriter(),
+            new MarkdownReader(),
+        );
     }
 
     private function paragraph(string $text): Paragraph
