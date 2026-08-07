@@ -89,10 +89,17 @@ changes.
     depend on (see #32's non-goal). Treated as a documented,
     explicit lossy/unsupported case, same as other "expected lossy"
     conversions already in this document.
-- **PDF export is a composition recipe, not a library feature** (#36):
-  pipe `HtmlWriter` output into `dompdf`/`mpdf` (both pure-PHP,
-  well-maintained, non-competing single-direction HTML→PDF renderers)
-  rather than building a PDF renderer or shelling out to a binary.
+- **PDF export is a first-class API in a satellite package, not a docs
+  recipe** (#39, supersedes #36): `fissible/transmark-pdf` will provide
+  `PdfWriter`, composing `HtmlWriter` output with `mpdf/mpdf` (pure-PHP,
+  well-maintained, non-competing single-direction HTML→PDF renderer)
+  rather than building a PDF renderer or shelling out to a binary. This
+  follows the same satellite-package precedent as #13/#14
+  (`transmark-blade`/`transmark-xlsx`): core `transmark` stays
+  dependency-free, but a consumer wanting DOCX→HTML *and* HTML→PDF gets
+  one real requirement (`fissible/transmark-pdf`), with `fissible/transmark`
+  resolved transitively — not two separate integrations to wire up
+  themselves.
 - **`ext-zip` is the one place the "no system binaries" pitch is
   narrower than it sounds** — it's an optional PHP extension, not
   universal. #35 tracks evaluating a pure-PHP alternative
@@ -181,7 +188,7 @@ against the implemented HTML and OOXML conventions.
 | 11 | `HtmlWriter`: table support | S | `Table` node taxonomy (done); not blocked by #31 | [#33](https://github.com/fissible/transmark/issues/33) | Not started |
 | 12 | `HtmlWriter`: image embedding (base64 data-URI, no image-processing deps) | S | `Image` node taxonomy (done); not blocked by #32 | [#34](https://github.com/fissible/transmark/issues/34) | Not started |
 | 13 | `Ooxml` zip-backend evaluation: `ext-zip` vs pure-PHP `nelexa/zip` (spike/decision, not a migration) | S | none | [#35](https://github.com/fissible/transmark/issues/35) | Not started |
-| 14 | Docs: PDF export recipe via `HtmlWriter` + `dompdf`/`mpdf` composition (no library code, no new dependency) | XS | `HtmlWriter` (done) | [#36](https://github.com/fissible/transmark/issues/36) | Not started |
+| 14 | `fissible/transmark-pdf` (separate package): `PdfWriter` composing `HtmlWriter` output with `mpdf/mpdf`, mirroring #13/#14's satellite-package pattern | L | `HtmlWriter` (done) | [#39](https://github.com/fissible/transmark/issues/39) | Not started |
 | 15 | CLI wrapper (`bin/transmark convert`) for reader/writer conversions | S | at least one reader/writer pair (done) | [#37](https://github.com/fissible/transmark/issues/37) | Not started |
 
 ## Session handoff notes
@@ -272,11 +279,20 @@ image support for `DocxReader`/`HtmlWriter`, a zip-backend evaluation
 spike, a PDF composition-recipe doc, a CLI wrapper) and explicitly
 declined RTF/templating/WMF-EMF (see design decisions above).
 
+**Completed (2026-08-07):** Re-scoped PDF export from a docs-only recipe
+(#36, closed as superseded) to a first-class `PdfWriter` API in a new
+satellite package, `fissible/transmark-pdf` (#39), mirroring #13/#14's
+pattern — driven by a real consumer need (a legal-acknowledgement
+DOCX→HTML→PDF workflow) wanting one Composer requirement, not two, even
+though `fissible/transmark` is transitively implied either way. `mpdf` is
+the recommended rendering engine over `dompdf` for its stronger CSS/
+pagination/header-footer support.
+
 **Next task:** #31 and #32 (`DocxReader` table + image support) close the
 gap the semantic-idempotence harness already documents as lossy; #33/#34
 are their `HtmlWriter`-side counterparts and can proceed in parallel.
-#35 (zip-backend evaluation) and #36 (PDF recipe doc) are independent,
-low-effort, pick-up-anytime tasks. #37 (CLI) benefits from at least
+#35 (zip-backend evaluation) and #39 (`transmark-pdf` scaffold) are
+independent, pick-up-anytime tasks. #37 (CLI) benefits from at least
 tables/images landing first but isn't blocked on them.
 
 **Release decision:** v0.3.0 shipped (native DOCX output + cross-format
