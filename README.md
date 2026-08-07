@@ -7,8 +7,8 @@ binaries required.
 
 > **Status: pre-alpha.** The document model, numbering engine, DOCX and
 > Markdown readers, and DOCX, HTML, and Markdown writers are implemented.
-> Broader node coverage and semantic round-trip verification remain on the
-> roadmap.
+> Semantic round-trip tests cover the supported Markdown and DOCX semantics;
+> broader node coverage remains on the roadmap.
 
 ## Why
 
@@ -43,6 +43,12 @@ numbering model into HTML's `<ol>`/`<li>` nesting. See
 - **Semantic idempotence, not byte-for-byte.** `AST → format → AST`
   should return an equivalent tree. Byte-for-byte round-tripping through
   DOCX or Markdown is not a goal — neither format is canonical.
+
+The test harness enforces exact tree equivalence where a format pair can
+represent the canonical semantics. Known format or reader limitations must be
+declared as expected losses with both a written reason and an assertion for the
+specific resulting tree shape; simply observing that two trees differ does not
+count as a passing lossy conversion.
 
 ## HTML output conventions
 
