@@ -6,8 +6,9 @@ pluggable readers/writers for DOCX, Markdown, and HTML — no system
 binaries required.
 
 > **Status: pre-alpha.** The document model, numbering engine, DOCX and
-> Markdown readers, and HTML and Markdown writers are implemented. Broader
-> node coverage and semantic round-trip verification remain on the roadmap.
+> Markdown readers, and DOCX, HTML, and Markdown writers are implemented.
+> Broader node coverage and semantic round-trip verification remain on the
+> roadmap.
 
 ## Why
 
@@ -54,7 +55,7 @@ numbering level, so consumers can style each indentation depth.
 ## Planned packages
 
 - `fissible/transmark` (this repo) — document model, numbering engine,
-  DOCX/Markdown readers, HTML/Markdown writers.
+  DOCX/Markdown readers, DOCX/HTML/Markdown writers.
 - `fissible/transmark-blade` — Laravel Blade adapter (separate package).
 - `fissible/transmark-xlsx` — XLSX reader/writer sharing this package's
   OOXML/zip layer.
@@ -87,6 +88,30 @@ $html = (new HtmlWriter())->write($document);
 `DocxReader` currently covers paragraphs, headings, core inline formatting,
 and Word numbering definitions. See the pre-alpha status above and roadmap for
 unsupported document features.
+
+## Writing DOCX
+
+`DocxWriter` creates a complete native OOXML package using only the existing
+`ext-dom` and `ext-zip` requirements:
+
+```php
+use Fissible\Transmark\Writers\DocxWriter;
+
+$bytes = (new DocxWriter())->write($document);
+file_put_contents('/path/to/document.docx', $bytes);
+```
+
+Paragraphs, headings, quotes, rules, tables, core inline formatting, links,
+code, and numbering definitions are supported. Structural `ListNode` trees
+are deliberately converted into Word's flat numbered-paragraph model; reading
+the result back therefore preserves list numbering and visible content, not
+the original tree nesting. Code blocks preserve their visual style and line
+breaks, but the current `DocxReader` reads them back as styled paragraphs.
+
+Images, inline images, footnotes, and comments require an asset/part API and
+currently throw an unsupported-node exception instead of being silently
+dropped. DOCX template editing, arbitrary layout fidelity, and media embedding
+are outside the first writer's scope.
 
 ## Markdown
 
