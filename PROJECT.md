@@ -194,8 +194,11 @@ against the implemented HTML and OOXML conventions.
 | 11 | `HtmlWriter`: table support | S | `Table` node taxonomy (done); not blocked by #31 | [#33](https://github.com/fissible/transmark/issues/33) | Not started |
 | 12 | `HtmlWriter`: image embedding (base64 data-URI, no image-processing deps) | S | `Image` node taxonomy (done); not blocked by #32 | [#34](https://github.com/fissible/transmark/issues/34) | Not started |
 | 13 | `Ooxml` zip-backend evaluation: `ext-zip` vs pure-PHP `nelexa/zip` (spike/decision, not a migration) | S | none | [#35](https://github.com/fissible/transmark/issues/35) | Not started |
-| 14 | `fissible/transmark-pdf` (separate package): `PdfWriter` composing `HtmlWriter` output with `dompdf/dompdf`, mirroring #13/#14's satellite-package pattern | L | `HtmlWriter` (done) | [#39](https://github.com/fissible/transmark/issues/39) | Not started |
+| 14 | `fissible/transmark-pdf` (separate package): `PdfWriter` composing `HtmlWriter` output with `dompdf/dompdf`, mirroring #13/#14's satellite-package pattern | L | `HtmlWriter` (done) | [#39](https://github.com/fissible/transmark/issues/39) | Done — released [v0.1.0](https://github.com/fissible/transmark-pdf/releases/tag/v0.1.0) |
 | 15 | CLI wrapper (`bin/transmark convert`) for reader/writer conversions | S | at least one reader/writer pair (done) | [#37](https://github.com/fissible/transmark/issues/37) | Not started |
+| 16 | Content-based format detection (DOCX zip+part signature) + extension as a non-authoritative secondary signal; typed mismatch exception when content and extension disagree (spoofing/rename detector) | S | none | [#42](https://github.com/fissible/transmark/issues/42) | In progress |
+| 17 | `HtmlReader`: best-effort arbitrary-HTML → canonical tree, throws a dedicated parsing exception on unmappable/ambiguous markup rather than guessing | L | Node taxonomy (done) | [#43](https://github.com/fissible/transmark/issues/43) | Scoped — not started |
+| 18 | `fissible/transmark-pdf` (separate package): `PdfReader` — best-effort layout-heuristic PDF → canonical tree (font-size/whitespace heuristics), throws on ambiguous extraction; library decision: `smalot/pdfparser` (LGPLv3) | L-XL | `PdfWriter` package scaffold (done) | [transmark-pdf#4](https://github.com/fissible/transmark-pdf/issues/4) | Scoped — not started |
 
 ## Session handoff notes
 
