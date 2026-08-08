@@ -199,7 +199,8 @@ against the implemented HTML and OOXML conventions.
 | 16 | Content-based format detection (DOCX zip+part signature) + extension as a non-authoritative secondary signal; typed mismatch exception when content and extension disagree (spoofing/rename detector) | S | none | [#42](https://github.com/fissible/transmark/issues/42) | Done |
 | 17 | `HtmlReader`: best-effort arbitrary-HTML → canonical tree, throws a dedicated parsing exception on unmappable/ambiguous markup rather than guessing | L | Node taxonomy (done) | [#43](https://github.com/fissible/transmark/issues/43) | Planned — see `docs/superpowers/plans/2026-08-08-html-reader.md` |
 | 18 | `fissible/transmark-pdf` (separate package): `PdfReader` — best-effort layout-heuristic PDF → canonical tree (font-size/whitespace heuristics), throws on ambiguous extraction; library decision: `smalot/pdfparser` (LGPLv3) | L-XL | `PdfWriter` package scaffold (done) | [transmark-pdf#4](https://github.com/fissible/transmark-pdf/issues/4) | Scoped — not started |
-| 19 | `HtmlWriter`: render `BlockQuote`/`CodeBlock`/`HorizontalRule` (currently silently dropped as `''`); establishes the `<pre><code class="language-X">` convention #43's `HtmlReader` parses back | S | none | [#45](https://github.com/fissible/transmark/issues/45) | Not started |
+| 19 | `HtmlWriter`: render `BlockQuote`/`CodeBlock`/`HorizontalRule` (currently silently dropped as `''`); establishes the `<pre><code class="language-X">` convention #43's `HtmlReader` parses back | S | none | [#45](https://github.com/fissible/transmark/issues/45) | Done |
+| 20 | `HtmlWriter`: `renderInline()` also silently drops unsupported inline types (`InlineImage`/`Footnote`/`Comment`); same fix pattern as #45, one level down | XS-S | #45 (done) | [#47](https://github.com/fissible/transmark/issues/47) | Not started |
 
 ## Session handoff notes
 

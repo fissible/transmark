@@ -8,7 +8,10 @@ use Fissible\Transmark\Contracts\BlockInterface;
 use Fissible\Transmark\Contracts\InlineInterface;
 use Fissible\Transmark\Contracts\WriterInterface;
 use Fissible\Transmark\Document;
+use Fissible\Transmark\Nodes\Block\BlockQuote;
+use Fissible\Transmark\Nodes\Block\CodeBlock;
 use Fissible\Transmark\Nodes\Block\Heading;
+use Fissible\Transmark\Nodes\Block\HorizontalRule;
 use Fissible\Transmark\Nodes\Block\ListItem;
 use Fissible\Transmark\Nodes\Block\ListNode;
 use Fissible\Transmark\Nodes\Block\Paragraph;
@@ -26,6 +29,7 @@ use Fissible\Transmark\Numbering\NumberFormat;
 use Fissible\Transmark\Numbering\NumberingEngine;
 use Fissible\Transmark\Numbering\NumberingLabelMap;
 use Fissible\Transmark\Numbering\NumberingShapeClassifier;
+use Fissible\Transmark\Writers\Exception\UnsupportedHtmlNodeException;
 
 /**
  * Legal-outline paragraphs use the classes "numbered-paragraph" and
@@ -112,7 +116,21 @@ final class HtmlWriter implements WriterInterface
             return $this->renderStructuralList($block, $document, $simpleNumIds, $labels);
         }
 
-        return '';
+        if ($block instanceof BlockQuote) {
+            return '<blockquote>'.$this->renderBlocks($block->content(), $document, $simpleNumIds, $labels).'</blockquote>';
+        }
+
+        if ($block instanceof HorizontalRule) {
+            return '<hr>';
+        }
+
+        if ($block instanceof CodeBlock) {
+            $class = $block->language() === null ? '' : ' class="language-'.$this->escape($block->language()).'"';
+
+            return '<pre><code'.$class.'>'.$this->escape($block->content()).'</code></pre>';
+        }
+
+        throw UnsupportedHtmlNodeException::at($block);
     }
 
     /**
