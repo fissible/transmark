@@ -21,9 +21,13 @@ final class HtmlReader implements ReaderInterface
         }
 
         $dom = new \DOMDocument();
-        libxml_use_internal_errors(true);
-        $dom->loadHTML('<?xml encoding="utf-8"?>'.$content);
-        libxml_clear_errors();
+        $previous = libxml_use_internal_errors(true);
+        try {
+            $dom->loadHTML('<?xml encoding="utf-8"?>'.$content);
+            libxml_clear_errors();
+        } finally {
+            libxml_use_internal_errors($previous);
+        }
 
         $body = $dom->getElementsByTagName('body')->item(0);
 
