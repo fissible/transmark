@@ -25,6 +25,7 @@
             "Fissible\\Transmark\\Tests\\": "tests/"
         }
     },
+    "bin": ["bin/transmark"],
     "minimum-stability": "stable",
     "prefer-stable": true,
     "scripts": {

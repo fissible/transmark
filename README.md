@@ -160,6 +160,28 @@ Those conversions are deliberately lossy: reading the Markdown back preserves
 the visible text, but cannot reconstruct the original OOXML numbering or
 formatting metadata.
 
+## Command-line usage
+
+`bin/transmark convert` picks a reader/writer pair by file extension and runs
+the same `$writer->write($reader->read($contents))` pipeline shown above:
+
+```bash
+vendor/bin/transmark convert agreement.docx agreement.html
+vendor/bin/transmark convert notes.md notes.html
+```
+
+Supported formats: `docx`, `html`/`htm`, `md`/`markdown`. When a path's
+extension doesn't match its real format (or has none), override detection
+explicitly:
+
+```bash
+vendor/bin/transmark convert --from=md --to=html notes.txt notes.out
+```
+
+An unsupported format, a missing input file, or a reader/writer failure all
+print a clear one-line error to stderr and exit non-zero — never a raw stack
+trace.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for commit conventions, branching,
