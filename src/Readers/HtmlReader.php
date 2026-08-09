@@ -47,7 +47,7 @@ final class HtmlReader implements ReaderInterface
         'var', 'dfn',
     ];
 
-    private const TRANSPARENT_INLINE_WRAPPERS = ['span'];
+    private const TRANSPARENT_INLINE_WRAPPERS = ['span', 'small', 'mark', 'abbr', 'time', 'cite', 'q', 'kbd', 'samp', 'var', 'dfn'];
 
     public function read(string $content): Document
     {

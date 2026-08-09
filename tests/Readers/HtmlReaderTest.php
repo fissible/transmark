@@ -407,4 +407,30 @@ final class HtmlReaderTest extends TestCase
         self::assertSame('more text', $inlines[1]->content());
         self::assertSame(' after', $inlines[2]->content());
     }
+
+    public function test_mark_wrapping_content_at_inline_level_unwraps_transparently(): void
+    {
+        $document = $this->read('<p>before <mark>flagged</mark> after</p>');
+
+        $inlines = $document->content()[0]->inlines();
+        self::assertCount(3, $inlines);
+        self::assertSame('before ', $inlines[0]->content());
+        self::assertSame('flagged', $inlines[1]->content());
+        self::assertSame(' after', $inlines[2]->content());
+    }
+
+    public function test_other_transparent_inline_wrappers_unwrap_at_inline_level(): void
+    {
+        $document = $this->read(
+            '<p>text <abbr title="abbreviation">ABBR</abbr> and <small>small</small> and <cite>citation</cite> end</p>'
+        );
+
+        $inlines = $document->content()[0]->inlines();
+        self::assertCount(7, $inlines);
+        // Verify all content is preserved (exact split depends on whitespace handling)
+        $contentText = implode('', array_map(fn ($inline) => $inline->content(), $inlines));
+        self::assertStringContainsString('ABBR', $contentText);
+        self::assertStringContainsString('small', $contentText);
+        self::assertStringContainsString('citation', $contentText);
+    }
 }
