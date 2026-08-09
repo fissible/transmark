@@ -241,4 +241,38 @@ final class HtmlReaderTest extends TestCase
 
         self::assertSame('raw preformatted text', $document->content()[0]->content());
     }
+
+    public function test_reads_a_table_with_thead_and_tbody(): void
+    {
+        $html = '<table><thead><tr><th>Name</th><th>Age</th></tr></thead>'
+            .'<tbody><tr><td>Alice</td><td>30</td></tr></tbody></table>';
+
+        $table = $this->read($html)->content()[0];
+        self::assertInstanceOf(\Fissible\Transmark\Nodes\Block\Table::class, $table);
+
+        $header = $table->header();
+        self::assertNotNull($header);
+        self::assertSame('Name', $header->cells()[0]->content()[0]->inlines()[0]->content());
+
+        $rows = $table->rows();
+        self::assertCount(1, $rows);
+        self::assertSame('Alice', $rows[0]->cells()[0]->content()[0]->inlines()[0]->content());
+    }
+
+    public function test_reads_a_table_with_no_thead(): void
+    {
+        $table = $this->read('<table><tr><td>A</td></tr><tr><td>B</td></tr></table>')->content()[0];
+
+        self::assertNull($table->header());
+        self::assertCount(2, $table->rows());
+    }
+
+    public function test_reads_colspan_and_rowspan(): void
+    {
+        $table = $this->read('<table><tr><td colspan="2" rowspan="3">merged</td></tr></table>')->content()[0];
+        $cell = $table->rows()[0]->cells()[0];
+
+        self::assertSame(2, $cell->colspan());
+        self::assertSame(3, $cell->rowspan());
+    }
 }

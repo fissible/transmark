@@ -15,6 +15,9 @@ use Fissible\Transmark\Nodes\Block\HorizontalRule;
 use Fissible\Transmark\Nodes\Block\ListItem;
 use Fissible\Transmark\Nodes\Block\ListNode;
 use Fissible\Transmark\Nodes\Block\Paragraph;
+use Fissible\Transmark\Nodes\Block\Table;
+use Fissible\Transmark\Nodes\Block\TableCell;
+use Fissible\Transmark\Nodes\Block\TableRow;
 use Fissible\Transmark\Nodes\Inline\Code;
 use Fissible\Transmark\Nodes\Inline\Emphasis;
 use Fissible\Transmark\Nodes\Inline\LineBreak;
@@ -101,6 +104,7 @@ final class HtmlReader implements ReaderInterface
             'blockquote' => new BlockQuote($this->mapBlockChildren($node)),
             'hr' => new HorizontalRule(),
             'pre' => $this->mapCodeBlock($node),
+            'table' => $this->mapTable($node),
             default => null,
         };
 
@@ -193,5 +197,64 @@ final class HtmlReader implements ReaderInterface
         }
 
         return new CodeBlock($content, $language);
+    }
+
+    private function mapTable(\DOMElement $node): Table
+    {
+        $header = null;
+        $rows = [];
+
+        foreach ($node->childNodes as $section) {
+            if (!$section instanceof \DOMElement) {
+                continue;
+            }
+
+            $sectionTag = strtolower($section->localName);
+
+            if ($sectionTag === 'thead') {
+                foreach ($section->childNodes as $tr) {
+                    if ($tr instanceof \DOMElement && strtolower($tr->localName) === 'tr') {
+                        $header ??= $this->mapTableRow($tr);
+                    }
+                }
+            } elseif ($sectionTag === 'tbody' || $sectionTag === 'tfoot') {
+                foreach ($section->childNodes as $tr) {
+                    if ($tr instanceof \DOMElement && strtolower($tr->localName) === 'tr') {
+                        $rows[] = $this->mapTableRow($tr);
+                    }
+                }
+            } elseif ($sectionTag === 'tr') {
+                $rows[] = $this->mapTableRow($section);
+            }
+        }
+
+        return new Table($rows, $header);
+    }
+
+    private function mapTableRow(\DOMElement $node): TableRow
+    {
+        $cells = [];
+
+        foreach ($node->childNodes as $child) {
+            if (!$child instanceof \DOMElement) {
+                continue;
+            }
+
+            $tag = strtolower($child->localName);
+            if ($tag !== 'td' && $tag !== 'th') {
+                continue;
+            }
+
+            $colspan = $child->hasAttribute('colspan') ? (int) $child->getAttribute('colspan') : 1;
+            $rowspan = $child->hasAttribute('rowspan') ? (int) $child->getAttribute('rowspan') : 1;
+
+            $cells[] = new TableCell(
+                [new Paragraph($this->mapInlineChildren($child))],
+                $colspan,
+                $rowspan,
+            );
+        }
+
+        return new TableRow($cells);
     }
 }
