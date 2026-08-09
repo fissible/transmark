@@ -17,6 +17,7 @@ use Fissible\Transmark\Nodes\Block\ListNode;
 use Fissible\Transmark\Nodes\Block\Paragraph;
 use Fissible\Transmark\Nodes\Inline\Code;
 use Fissible\Transmark\Nodes\Inline\Emphasis;
+use Fissible\Transmark\Nodes\Inline\InlineImage;
 use Fissible\Transmark\Nodes\Inline\LineBreak;
 use Fissible\Transmark\Nodes\Inline\Link;
 use Fissible\Transmark\Nodes\Inline\Strike;
@@ -363,8 +364,18 @@ final class HtmlWriter implements WriterInterface
             $inline instanceof Code => '<code>'.$this->escape($inline->content()).'</code>',
             $inline instanceof Link => $this->renderLink($inline),
             $inline instanceof LineBreak => '<br>',
-            default => '',
+            $inline instanceof InlineImage => $this->renderInlineImage($inline),
+            default => throw UnsupportedHtmlNodeException::at($inline),
         };
+    }
+
+    private function renderInlineImage(InlineImage $image): string
+    {
+        $title = $image->title() === null
+            ? ''
+            : ' title="'.$this->escape($image->title()).'"';
+
+        return '<img src="'.$this->escape($image->src()).'" alt="'.$this->escape($image->alt()).'"'.$title.'>';
     }
 
     private function renderLink(Link $link): string
