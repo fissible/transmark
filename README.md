@@ -94,13 +94,20 @@ media (`form`, `button`, `iframe`, `svg`, `video`, ...) plus any custom element
 — throws `HtmlParseException` naming the offending tag, so you can find and
 replace it instead of losing it.
 
-## Planned packages
+## Satellite packages
 
-- `fissible/transmark` (this repo) — document model, numbering engine,
-  DOCX/Markdown/HTML readers, DOCX/HTML/Markdown writers.
-- `fissible/transmark-blade` — Laravel Blade adapter (separate package).
-- `fissible/transmark-xlsx` — XLSX reader/writer sharing this package's
-  OOXML/zip layer.
+All released and available on Packagist:
+
+- [`fissible/transmark-pdf`](https://github.com/fissible/transmark-pdf) —
+  PDF export/import (`PdfWriter`, `PdfReader`), composing this package's
+  `HtmlWriter` output with `dompdf/dompdf`.
+- [`fissible/transmark-blade`](https://github.com/fissible/transmark-blade) —
+  Laravel Blade adapter: a `@transmark` directive and `<x-transmark>`
+  component that render `Document` objects (or DOCX/Markdown file paths)
+  as HTML via `HtmlWriter`.
+- [`fissible/transmark-xlsx`](https://github.com/fissible/transmark-xlsx) —
+  XLSX import/export (`XlsxReader`, `XlsxWriter`) reading and writing a
+  `Workbook`/`Sheet`/`Cell` model, sharing this package's OOXML/zip layer.
 
 ## Requirements
 
