@@ -8,6 +8,7 @@ use Fissible\Transmark\Contracts\BlockInterface;
 use Fissible\Transmark\Contracts\InlineInterface;
 use Fissible\Transmark\Contracts\ReaderInterface;
 use Fissible\Transmark\Document;
+use Fissible\Transmark\Nodes\Block\Heading;
 use Fissible\Transmark\Nodes\Block\Paragraph;
 use Fissible\Transmark\Nodes\Inline\Text;
 use Fissible\Transmark\Readers\Exception\HtmlParseException;
@@ -74,6 +75,10 @@ final class HtmlReader implements ReaderInterface
         }
 
         $tag = strtolower($node->localName);
+
+        if (preg_match('/^h([1-6])$/', $tag, $matches) === 1) {
+            return [new Heading((int) $matches[1], $this->mapInlineChildren($node))];
+        }
 
         $block = match ($tag) {
             'p' => new Paragraph($this->mapInlineChildren($node)),

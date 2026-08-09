@@ -86,4 +86,21 @@ final class HtmlReaderTest extends TestCase
 
         self::assertNotEmpty($document->content());
     }
+
+    public function test_reads_headings_h1_through_h6(): void
+    {
+        $html = '<body>'.implode('', array_map(
+            static fn (int $n) => "<h{$n}>Heading {$n}</h{$n}>",
+            range(1, 6),
+        )).'</body>';
+
+        $content = $this->read($html)->content();
+
+        self::assertCount(6, $content);
+        foreach ($content as $index => $heading) {
+            self::assertInstanceOf(\Fissible\Transmark\Nodes\Block\Heading::class, $heading);
+            self::assertSame($index + 1, $heading->level());
+            self::assertSame('Heading '.($index + 1), $heading->inlines()[0]->content());
+        }
+    }
 }
