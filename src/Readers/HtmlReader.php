@@ -47,6 +47,8 @@ final class HtmlReader implements ReaderInterface
         'var', 'dfn',
     ];
 
+    private const TRANSPARENT_INLINE_WRAPPERS = ['span'];
+
     public function read(string $content): Document
     {
         if (trim($content) === '') {
@@ -162,6 +164,12 @@ final class HtmlReader implements ReaderInterface
         $inlines = [];
 
         foreach ($container->childNodes as $child) {
+            // Handle transparent wrapper tags by splicing their children directly into the parent list.
+            if ($child instanceof \DOMElement && in_array(strtolower($child->localName), self::TRANSPARENT_INLINE_WRAPPERS, true)) {
+                array_push($inlines, ...$this->mapInlineChildren($child));
+                continue;
+            }
+
             $inline = $this->mapInline($child);
             if ($inline !== null) {
                 $inlines[] = $inline;

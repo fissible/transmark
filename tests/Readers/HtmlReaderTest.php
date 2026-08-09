@@ -396,4 +396,15 @@ final class HtmlReaderTest extends TestCase
             self::assertStringContainsString('form', $exception->getMessage());
         }
     }
+
+    public function test_span_wrapping_content_at_inline_level_unwraps_transparently(): void
+    {
+        $document = $this->read('<p>text <span>more text</span> after</p>');
+
+        $inlines = $document->content()[0]->inlines();
+        self::assertCount(3, $inlines);
+        self::assertSame('text ', $inlines[0]->content());
+        self::assertSame('more text', $inlines[1]->content());
+        self::assertSame(' after', $inlines[2]->content());
+    }
 }
