@@ -103,4 +103,68 @@ final class HtmlReaderTest extends TestCase
             self::assertSame('Heading '.($index + 1), $heading->inlines()[0]->content());
         }
     }
+
+    public function test_reads_nested_inline_formatting(): void
+    {
+        $document = $this->read('<p><strong><em>bold italic</em></strong></p>');
+
+        $inlines = $document->content()[0]->inlines();
+        self::assertInstanceOf(\Fissible\Transmark\Nodes\Inline\Strong::class, $inlines[0]);
+
+        $children = $inlines[0]->children();
+        self::assertInstanceOf(\Fissible\Transmark\Nodes\Inline\Emphasis::class, $children[0]);
+        self::assertSame('bold italic', $children[0]->children()[0]->content());
+    }
+
+    public function test_reads_b_and_i_as_strong_and_emphasis(): void
+    {
+        $document = $this->read('<p><b>bold</b> <i>italic</i></p>');
+
+        $inlines = $document->content()[0]->inlines();
+        self::assertInstanceOf(\Fissible\Transmark\Nodes\Inline\Strong::class, $inlines[0]);
+        self::assertInstanceOf(\Fissible\Transmark\Nodes\Inline\Emphasis::class, $inlines[2]);
+    }
+
+    public function test_reads_underline_strike_sub_sup_and_inline_code(): void
+    {
+        $document = $this->read(
+            '<p><u>u</u><s>s</s><sub>sub</sub><sup>sup</sup><code>code</code></p>',
+        );
+
+        $inlines = $document->content()[0]->inlines();
+        self::assertInstanceOf(\Fissible\Transmark\Nodes\Inline\Underline::class, $inlines[0]);
+        self::assertInstanceOf(\Fissible\Transmark\Nodes\Inline\Strike::class, $inlines[1]);
+        self::assertInstanceOf(\Fissible\Transmark\Nodes\Inline\Subscript::class, $inlines[2]);
+        self::assertInstanceOf(\Fissible\Transmark\Nodes\Inline\Superscript::class, $inlines[3]);
+        self::assertInstanceOf(\Fissible\Transmark\Nodes\Inline\Code::class, $inlines[4]);
+        self::assertSame('code', $inlines[4]->content());
+    }
+
+    public function test_reads_links_with_title(): void
+    {
+        $document = $this->read('<p><a href="https://example.com" title="Example">link text</a></p>');
+
+        $link = $document->content()[0]->inlines()[0];
+        self::assertInstanceOf(\Fissible\Transmark\Nodes\Inline\Link::class, $link);
+        self::assertSame('https://example.com', $link->href());
+        self::assertSame('Example', $link->title());
+        self::assertSame('link text', $link->children()[0]->content());
+    }
+
+    public function test_reads_links_without_a_title(): void
+    {
+        $link = $this->read('<p><a href="https://example.com">text</a></p>')->content()[0]->inlines()[0];
+
+        self::assertNull($link->title());
+    }
+
+    public function test_reads_line_breaks(): void
+    {
+        $document = $this->read('<p>line one<br>line two</p>');
+
+        $inlines = $document->content()[0]->inlines();
+        self::assertSame('line one', $inlines[0]->content());
+        self::assertInstanceOf(\Fissible\Transmark\Nodes\Inline\LineBreak::class, $inlines[1]);
+        self::assertSame('line two', $inlines[2]->content());
+    }
 }

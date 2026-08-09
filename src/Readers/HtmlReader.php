@@ -10,7 +10,16 @@ use Fissible\Transmark\Contracts\ReaderInterface;
 use Fissible\Transmark\Document;
 use Fissible\Transmark\Nodes\Block\Heading;
 use Fissible\Transmark\Nodes\Block\Paragraph;
+use Fissible\Transmark\Nodes\Inline\Code;
+use Fissible\Transmark\Nodes\Inline\Emphasis;
+use Fissible\Transmark\Nodes\Inline\LineBreak;
+use Fissible\Transmark\Nodes\Inline\Link;
+use Fissible\Transmark\Nodes\Inline\Strike;
+use Fissible\Transmark\Nodes\Inline\Strong;
+use Fissible\Transmark\Nodes\Inline\Subscript;
+use Fissible\Transmark\Nodes\Inline\Superscript;
 use Fissible\Transmark\Nodes\Inline\Text;
+use Fissible\Transmark\Nodes\Inline\Underline;
 use Fissible\Transmark\Readers\Exception\HtmlParseException;
 
 final class HtmlReader implements ReaderInterface
@@ -111,6 +120,27 @@ final class HtmlReader implements ReaderInterface
             return $node->textContent === '' ? null : new Text($node->textContent);
         }
 
-        return null;
+        if (!$node instanceof \DOMElement) {
+            return null;
+        }
+
+        $tag = strtolower($node->localName);
+
+        return match ($tag) {
+            'strong', 'b' => new Strong($this->mapInlineChildren($node)),
+            'em', 'i' => new Emphasis($this->mapInlineChildren($node)),
+            'u' => new Underline($this->mapInlineChildren($node)),
+            's', 'strike', 'del' => new Strike($this->mapInlineChildren($node)),
+            'sub' => new Subscript($this->mapInlineChildren($node)),
+            'sup' => new Superscript($this->mapInlineChildren($node)),
+            'code' => new Code($node->textContent),
+            'a' => new Link(
+                $node->getAttribute('href'),
+                $this->mapInlineChildren($node),
+                $node->hasAttribute('title') ? $node->getAttribute('title') : null,
+            ),
+            'br' => new LineBreak(),
+            default => null,
+        };
     }
 }
