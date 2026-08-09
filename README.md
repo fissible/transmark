@@ -96,15 +96,18 @@ replace it instead of losing it.
 
 ## Satellite packages
 
+All released and available on Packagist:
+
 - [`fissible/transmark-pdf`](https://github.com/fissible/transmark-pdf) —
-  PDF export (`PdfWriter`, `PdfReader`), composing this package's
-  `HtmlWriter` output with `dompdf/dompdf`. Released.
-- `fissible/transmark-blade` — Laravel Blade adapter (directive/component
-  wrapping `HtmlWriter`). Scoped, not yet built — see
-  [#13](https://github.com/fissible/transmark/issues/13).
-- `fissible/transmark-xlsx` — XLSX reader/writer sharing this package's
-  OOXML/zip layer. Scoped, not yet built — see
-  [#14](https://github.com/fissible/transmark/issues/14).
+  PDF export/import (`PdfWriter`, `PdfReader`), composing this package's
+  `HtmlWriter` output with `dompdf/dompdf`.
+- [`fissible/transmark-blade`](https://github.com/fissible/transmark-blade) —
+  Laravel Blade adapter: a `@transmark` directive and `<x-transmark>`
+  component that render `Document` objects (or DOCX/Markdown file paths)
+  as HTML via `HtmlWriter`.
+- [`fissible/transmark-xlsx`](https://github.com/fissible/transmark-xlsx) —
+  XLSX import/export (`XlsxReader`, `XlsxWriter`) reading and writing a
+  `Workbook`/`Sheet`/`Cell` model, sharing this package's OOXML/zip layer.
 
 ## Requirements
 
