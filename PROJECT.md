@@ -111,6 +111,51 @@ changes.
   universal. #35 tracks evaluating a pure-PHP alternative
   (`nelexa/zip`) as a spike/decision, not a committed migration.
 
+**Zip backend spike (2026-08-09, #35) — decision: keep `ext-zip`, no migration.**
+
+Real production usage is narrow and fully covered by `nelexa/zip`'s API 1:1:
+`OoxmlPackage` (read: `open`/`getFromName`/`close`), `DocxWriter` (write:
+`open(..., OVERWRITE)`/`addFromString`/`close`), and `FormatDetector` (read:
+`open`/`locateName`/`close` — added by #42 after this ticket was originally
+scoped, so the original "OoxmlPackage and DocxWriter" framing was already
+slightly stale). `nelexa/zip`'s `ZipFile` class covers every one of these
+(`openFile`, `getEntryContent`/array access, `hasEntry`/`isset`,
+`addFromString`, `saveAsFile`+`close`), and its exception-based error
+handling would even simplify the current manual status-code-checking
+boilerplate in all three call sites.
+
+The trade against making the switch turned out worse than the ticket's
+original framing suggested, once checked directly rather than trusted from
+a several-months-old note:
+- **Packagist's "last update: 2026-07-16" is dependency-resolution metadata,
+  not a release.** The actual latest tagged release is **4.0.2, June 2022**
+  — over four years old. The GitHub commit history confirms the same: the
+  only commits after June 2022 are two CI-workflow-only fixes in November
+  2025, with zero substantive code changes in over three years. This is a
+  dormant/maintenance-only project, not the "actively released" library the
+  ticket described (that characterization was accurate for the data
+  available in 2026-05, but didn't hold up under a fresh check).
+- It pulls in `symfony/finder` as a hard runtime dependency — a filesystem
+  *search* utility with no obvious relationship to zip archive I/O, and a
+  transitive-dependency-weight smell for a package this narrowly scoped.
+- `ext-zip`, by contrast, ships in PHP's own source tree (`php-src/ext/zip`)
+  as an official extension — actively versioned as part of core PHP tooling
+  (confirmed `1.22.8` in this environment), not a fringe third-party
+  dependency. Its unavailability on some minimal Docker images is real, but
+  it's a well-known, well-precedented, one-line deployment fix
+  (`docker-php-ext-install zip` / `apt install php-zip`) — the same category
+  of requirement as `ext-mbstring` (needed by `dompdf` in `transmark-pdf`)
+  or `ext-dom` (needed by this package itself), not a "system binary" in the
+  sense the project's "no system binaries required" pitch is actually
+  about (avoiding LibreOffice/Pandoc-style external processes).
+
+Swapping an actively-maintained, PHP-core-adjacent extension for a dormant
+third-party package with an unrelated hard dependency, to solve a narrow and
+easily-worked-around deployment inconvenience, is not a good trade for a
+library whose core value proposition is dependency-light document
+conversion. **No follow-up migration issue filed** — this is a genuine
+no-go, not a deferred yes.
+
 ## Status: DOCX, HTML, and Markdown semantic I/O core complete
 
 The canonical model, full numbering engine, OOXML package layer,
@@ -193,7 +238,7 @@ against the implemented HTML and OOXML conventions.
 | 10 | `DocxReader`: image pass-through (`w:drawing` media extraction, no image-processing deps; WMF/EMF explicitly out of scope) | M | #5, #6 | [#32](https://github.com/fissible/transmark/issues/32) | Not started |
 | 11 | `HtmlWriter`: table support | S | `Table` node taxonomy (done); not blocked by #31 | [#33](https://github.com/fissible/transmark/issues/33) | Not started |
 | 12 | `HtmlWriter`: image embedding (base64 data-URI, no image-processing deps) | S | `Image` node taxonomy (done); not blocked by #32 | [#34](https://github.com/fissible/transmark/issues/34) | Not started |
-| 13 | `Ooxml` zip-backend evaluation: `ext-zip` vs pure-PHP `nelexa/zip` (spike/decision, not a migration) | S | none | [#35](https://github.com/fissible/transmark/issues/35) | Not started |
+| 13 | `Ooxml` zip-backend evaluation: `ext-zip` vs pure-PHP `nelexa/zip` (spike/decision, not a migration) | S | none | [#35](https://github.com/fissible/transmark/issues/35) | Done — no-go, keep `ext-zip` (see design decision above) |
 | 14 | `fissible/transmark-pdf` (separate package): `PdfWriter` composing `HtmlWriter` output with `dompdf/dompdf`, mirroring #13/#14's satellite-package pattern | L | `HtmlWriter` (done) | [#39](https://github.com/fissible/transmark/issues/39) | Done — released [v0.1.0](https://github.com/fissible/transmark-pdf/releases/tag/v0.1.0) |
 | 15 | CLI wrapper (`bin/transmark convert`) for reader/writer conversions | S | at least one reader/writer pair (done) | [#37](https://github.com/fissible/transmark/issues/37) | Not started |
 | 16 | Content-based format detection (DOCX zip+part signature) + extension as a non-authoritative secondary signal; typed mismatch exception when content and extension disagree (spoofing/rename detector) | S | none | [#42](https://github.com/fissible/transmark/issues/42) | Done |
