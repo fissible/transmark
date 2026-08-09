@@ -167,4 +167,36 @@ final class HtmlReaderTest extends TestCase
         self::assertInstanceOf(\Fissible\Transmark\Nodes\Inline\LineBreak::class, $inlines[1]);
         self::assertSame('line two', $inlines[2]->content());
     }
+
+    public function test_reads_an_unordered_list(): void
+    {
+        $document = $this->read('<ul><li>One</li><li>Two</li></ul>');
+
+        $list = $document->content()[0];
+        self::assertInstanceOf(\Fissible\Transmark\Nodes\Block\ListNode::class, $list);
+        self::assertSame(\Fissible\Transmark\Nodes\Block\ListNode::TYPE_UNORDERED, $list->type());
+        self::assertCount(2, $list->items());
+        self::assertSame('One', $list->items()[0]->content()[0]->inlines()[0]->content());
+    }
+
+    public function test_reads_an_ordered_list_with_a_start_attribute(): void
+    {
+        $document = $this->read('<ol start="5"><li>Five</li><li>Six</li></ol>');
+
+        $list = $document->content()[0];
+        self::assertSame(\Fissible\Transmark\Nodes\Block\ListNode::TYPE_ORDERED, $list->type());
+        self::assertSame(5, $list->start());
+    }
+
+    public function test_reads_a_nested_list(): void
+    {
+        $document = $this->read('<ul><li>A<ul><li>Nested</li></ul></li></ul>');
+
+        $outerItem = $document->content()[0]->items()[0];
+        $content = $outerItem->content();
+
+        self::assertSame('A', $content[0]->inlines()[0]->content());
+        self::assertInstanceOf(\Fissible\Transmark\Nodes\Block\ListNode::class, $content[1]);
+        self::assertSame('Nested', $content[1]->items()[0]->content()[0]->inlines()[0]->content());
+    }
 }

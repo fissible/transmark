@@ -9,6 +9,8 @@ use Fissible\Transmark\Contracts\InlineInterface;
 use Fissible\Transmark\Contracts\ReaderInterface;
 use Fissible\Transmark\Document;
 use Fissible\Transmark\Nodes\Block\Heading;
+use Fissible\Transmark\Nodes\Block\ListItem;
+use Fissible\Transmark\Nodes\Block\ListNode;
 use Fissible\Transmark\Nodes\Block\Paragraph;
 use Fissible\Transmark\Nodes\Inline\Code;
 use Fissible\Transmark\Nodes\Inline\Emphasis;
@@ -91,6 +93,8 @@ final class HtmlReader implements ReaderInterface
 
         $block = match ($tag) {
             'p' => new Paragraph($this->mapInlineChildren($node)),
+            'ul' => $this->mapList($node, ListNode::TYPE_UNORDERED),
+            'ol' => $this->mapList($node, ListNode::TYPE_ORDERED),
             default => null,
         };
 
@@ -142,5 +146,20 @@ final class HtmlReader implements ReaderInterface
             'br' => new LineBreak(),
             default => null,
         };
+    }
+
+    private function mapList(\DOMElement $node, string $type): ListNode
+    {
+        $items = [];
+
+        foreach ($node->childNodes as $child) {
+            if ($child instanceof \DOMElement && strtolower($child->localName) === 'li') {
+                $items[] = new ListItem($this->mapBlockChildren($child));
+            }
+        }
+
+        $start = $node->hasAttribute('start') ? (int) $node->getAttribute('start') : 1;
+
+        return new ListNode($type, $items, $start);
     }
 }
