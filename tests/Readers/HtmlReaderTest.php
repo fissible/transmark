@@ -293,4 +293,24 @@ final class HtmlReaderTest extends TestCase
         self::assertSame(1, $cell->colspan());
         self::assertSame(1, $cell->rowspan());
     }
+
+    public function test_reads_a_block_level_image(): void
+    {
+        $document = $this->read('<body><img src="photo.jpg" alt="A photo" title="Title"></body>');
+
+        $image = $document->content()[0];
+        self::assertInstanceOf(\Fissible\Transmark\Nodes\Block\Image::class, $image);
+        self::assertSame('photo.jpg', $image->src());
+        self::assertSame('A photo', $image->alt());
+        self::assertSame('Title', $image->title());
+    }
+
+    public function test_reads_an_inline_image_inside_a_paragraph(): void
+    {
+        $document = $this->read('<p>See <img src="icon.png" alt="icon"> here</p>');
+
+        $inlines = $document->content()[0]->inlines();
+        self::assertInstanceOf(\Fissible\Transmark\Nodes\Inline\InlineImage::class, $inlines[1]);
+        self::assertSame('icon.png', $inlines[1]->src());
+    }
 }

@@ -12,6 +12,7 @@ use Fissible\Transmark\Nodes\Block\BlockQuote;
 use Fissible\Transmark\Nodes\Block\CodeBlock;
 use Fissible\Transmark\Nodes\Block\Heading;
 use Fissible\Transmark\Nodes\Block\HorizontalRule;
+use Fissible\Transmark\Nodes\Block\Image;
 use Fissible\Transmark\Nodes\Block\ListItem;
 use Fissible\Transmark\Nodes\Block\ListNode;
 use Fissible\Transmark\Nodes\Block\Paragraph;
@@ -20,6 +21,7 @@ use Fissible\Transmark\Nodes\Block\TableCell;
 use Fissible\Transmark\Nodes\Block\TableRow;
 use Fissible\Transmark\Nodes\Inline\Code;
 use Fissible\Transmark\Nodes\Inline\Emphasis;
+use Fissible\Transmark\Nodes\Inline\InlineImage;
 use Fissible\Transmark\Nodes\Inline\LineBreak;
 use Fissible\Transmark\Nodes\Inline\Link;
 use Fissible\Transmark\Nodes\Inline\Strike;
@@ -105,6 +107,11 @@ final class HtmlReader implements ReaderInterface
             'hr' => new HorizontalRule(),
             'pre' => $this->mapCodeBlock($node),
             'table' => $this->mapTable($node),
+            'img' => new Image(
+                $node->getAttribute('src'),
+                $node->getAttribute('alt'),
+                $node->hasAttribute('title') ? $node->getAttribute('title') : null,
+            ),
             default => null,
         };
 
@@ -154,6 +161,11 @@ final class HtmlReader implements ReaderInterface
                 $node->hasAttribute('title') ? $node->getAttribute('title') : null,
             ),
             'br' => new LineBreak(),
+            'img' => new InlineImage(
+                $node->getAttribute('src'),
+                $node->getAttribute('alt'),
+                $node->hasAttribute('title') ? $node->getAttribute('title') : null,
+            ),
             default => null,
         };
     }
