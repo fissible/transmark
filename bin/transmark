@@ -1,0 +1,37 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+$autoloadCandidates = [
+    __DIR__.'/../vendor/autoload.php',
+    __DIR__.'/../../../autoload.php',
+];
+
+$autoloadPath = null;
+foreach ($autoloadCandidates as $candidate) {
+    if (is_file($candidate)) {
+        $autoloadPath = $candidate;
+        break;
+    }
+}
+
+if ($autoloadPath === null) {
+    fwrite(STDERR, 'Unable to locate Composer autoload.php.'.PHP_EOL);
+    exit(1);
+}
+
+require $autoloadPath;
+
+use Fissible\Transmark\Console\ConvertCommand;
+
+$command = new ConvertCommand(
+    static function (string $message): void {
+        fwrite(STDOUT, $message);
+    },
+    static function (string $message): void {
+        fwrite(STDERR, $message);
+    },
+);
+
+exit($command->run(array_slice($argv, 1)));
