@@ -283,8 +283,8 @@ against the implemented HTML and OOXML conventions.
 | 4b | `HtmlWriter`: flat + literal-label strategy for "legal" `numId` runs | M | #1–#4, #9 (classification logic) | [#10](https://github.com/fissible/transmark/issues/10) | Done |
 | 5 | `MarkdownWriter`: tree → Markdown, reusing #9/#10's simple-vs-legal classification | M | #8 (node coverage); #1–#4 and #9/#10 (classification) for numbered-paragraph fallback | [#11](https://github.com/fissible/transmark/issues/11) | Done |
 | 6 | Semantic-idempotence test harness: hand-write ASTs, round-trip through each reader/writer pair, assert tree equality (with explicit "expected lossy" markers, e.g. legal outlines through Markdown) | M | #8, #11 (minimum, Markdown ⇄ Markdown); #27 for DOCX ⇄ DOCX | [#12](https://github.com/fissible/transmark/issues/12) | Done |
-| 7 | `fissible/transmark-blade` (separate package, stub only — re-scope once #9/#10's `HtmlWriter` output conventions settle) | M (re-scope pending) | #9, #10 | [#13](https://github.com/fissible/transmark/issues/13) | Stub — needs re-scoping |
-| 8 | `fissible/transmark-xlsx` (separate package, stub only — re-scope once `OoxmlPackage` is validated by real usage) | XL (re-scope pending) | #5 (and validation from #6/#7) | [#14](https://github.com/fissible/transmark/issues/14) | Stub — needs re-scoping |
+| 7 | `fissible/transmark-blade` (separate package): Blade directive/component adapter over `HtmlWriter`, repo not yet created | M | #9, #10 (done) | [#13](https://github.com/fissible/transmark/issues/13) | Re-scoped — ready to pick up |
+| 8 | `fissible/transmark-xlsx` (separate package): XLSX reader/writer over `OoxmlPackage`, repo not yet created | XL | #5-#7 (done) | [#14](https://github.com/fissible/transmark/issues/14) | Re-scoped — ready to pick up |
 | 9 | `DocxReader`: table support (`w:tbl` → `Table`/`TableRow`/`TableCell`) | M | #6, #7 | [#31](https://github.com/fissible/transmark/issues/31) | Done |
 | 10 | `DocxReader`: image pass-through (`w:drawing` media extraction, no image-processing deps; WMF/EMF explicitly out of scope) | M | #5, #6 | [#32](https://github.com/fissible/transmark/issues/32) | Done |
 | 11 | `HtmlWriter`: table support | S | `Table` node taxonomy (done); not blocked by #31 | [#33](https://github.com/fissible/transmark/issues/33) | Done |
@@ -413,10 +413,27 @@ bug (see design decisions above) via a shared `Numbering\ParagraphWalker`.
 **Completed (2026-08-09, #31/#32):** `DocxReader` table + image support
 (see design decisions above).
 
-**Next task:** the remaining backlog is `transmark-pdf#2`/`#3` (hardening
-and CI/docs polish in the satellite package) and `transmark#13`/`#14`
-(`transmark-blade`/`transmark-xlsx` stubs — still marked "needs
-re-scoping").
+**Completed (2026-08-09):** `transmark-pdf#2`/`#3` (hardening, CI/docs
+polish) landed and released as
+[transmark-pdf v0.2.0](https://github.com/fissible/transmark-pdf/releases/tag/v0.2.0).
+
+**Re-scoped (2026-08-09), #13/#14.** Both packages' stated blockers are
+done (#9/#10 for `transmark-blade`; #5-#7 for `transmark-xlsx`), so both
+issues were rewritten with concrete, dependency-ordered task breakdowns —
+see the issues themselves for the full plan. Neither repo exists yet.
+`transmark-blade` is a thin adapter (~S/M total: `ServiceProvider` + Blade
+directive/component wrapping `HtmlWriter::write()`, dispatching to
+`DocxReader`/`MarkdownReader` when given a file path). `transmark-xlsx` is
+substantially bigger (~L/XL total: needs its own `Workbook`/`Sheet`/`Cell`
+model — XLSX's grid doesn't map onto this project's `Document`/`Block`/
+`Inline` tree — plus a full read/write cycle including `[Content_Types].xml`/
+`_rels` manifest generation from scratch, the known risk area). Pick up
+`transmark-blade` (#13) first given the size difference; `transmark-xlsx`
+(#14) has no further blockers but is a bigger, separately-schedulable
+chunk of work.
+
+**Next task:** #13 (`transmark-blade`) — new repo scaffold, following
+`fissible/transmark-pdf`'s CI/release template.
 
 **Release decision:** v0.3.0 shipped (native DOCX output + cross-format
 semantic-idempotence contract). No release currently pending.
