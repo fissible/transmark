@@ -8,7 +8,7 @@ use Fissible\Transmark\Document;
 use Fissible\Transmark\Nodes\Block\BlockQuote;
 use Fissible\Transmark\Nodes\Block\CodeBlock;
 use Fissible\Transmark\Nodes\Block\HorizontalRule;
-use Fissible\Transmark\Nodes\Block\Image;
+use Fissible\Transmark\Nodes\Block\ListItem;
 use Fissible\Transmark\Nodes\Block\Paragraph;
 use Fissible\Transmark\Nodes\Inline\Text;
 use Fissible\Transmark\Writers\Exception\UnsupportedHtmlNodeException;
@@ -72,10 +72,15 @@ final class HtmlWriterBlockRenderingTest extends TestCase
 
     public function test_throws_on_an_unsupported_block_type(): void
     {
+        // ListItem is a real BlockInterface implementation, but it's only
+        // ever meant to appear nested inside a ListNode, never as a bare
+        // top-level document block - a valid stand-in for "genuinely
+        // unsupported at this position" now that every real content block
+        // type (including Table and Image) has a renderBlock() case.
         $this->expectException(UnsupportedHtmlNodeException::class);
 
         (new HtmlWriter())->write(new Document([
-            new Image('photo.jpg'),
+            new ListItem([$this->paragraph('Orphaned list item')]),
         ]));
     }
 }

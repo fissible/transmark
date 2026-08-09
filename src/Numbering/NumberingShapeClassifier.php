@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace Fissible\Transmark\Numbering;
 
 use Fissible\Transmark\Document;
-use Fissible\Transmark\Nodes\Block\Paragraph;
 
 /**
  * Classifies the numbered-paragraph shapes that native list syntax can
  * represent. A numId is simple only when every used level is an independent
- * single-placeholder counter (or a literal bullet).
+ * single-placeholder counter (or a literal bullet). "Used" includes levels
+ * only ever referenced from inside a table cell, list item, or blockquote -
+ * ParagraphWalker recurses into those the same way NumberingEngine does, so
+ * a numId isn't silently mis-defaulted just because its only paragraph is
+ * nested.
  */
 final class NumberingShapeClassifier
 {
@@ -21,8 +24,8 @@ final class NumberingShapeClassifier
     {
         $usedLevels = [];
 
-        foreach ($document->content() as $block) {
-            if (!$block instanceof Paragraph || $block->numbering() === null) {
+        foreach (ParagraphWalker::paragraphsIn($document->content()) as $block) {
+            if ($block->numbering() === null) {
                 continue;
             }
 

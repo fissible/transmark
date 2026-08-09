@@ -4,16 +4,8 @@ declare(strict_types=1);
 
 namespace Fissible\Transmark\Numbering;
 
-use Fissible\Transmark\Contracts\BlockInterface;
 use Fissible\Transmark\Contracts\NumberingEngineInterface;
 use Fissible\Transmark\Document;
-use Fissible\Transmark\Nodes\Block\BlockQuote;
-use Fissible\Transmark\Nodes\Block\ListItem;
-use Fissible\Transmark\Nodes\Block\ListNode;
-use Fissible\Transmark\Nodes\Block\Paragraph;
-use Fissible\Transmark\Nodes\Block\Table;
-use Fissible\Transmark\Nodes\Block\TableCell;
-use Fissible\Transmark\Nodes\Block\TableRow;
 
 final class NumberingEngine implements NumberingEngineInterface
 {
@@ -23,7 +15,7 @@ final class NumberingEngine implements NumberingEngineInterface
         $counters = [];
         $labels = [];
 
-        foreach ($this->paragraphsIn($document->content()) as $paragraph) {
+        foreach (ParagraphWalker::paragraphsIn($document->content()) as $paragraph) {
             $numbering = $paragraph->numbering();
 
             if ($numbering === null) {
@@ -89,45 +81,5 @@ final class NumberingEngine implements NumberingEngineInterface
             },
             $currentLevel->lvlText(),
         ) ?? $currentLevel->lvlText();
-    }
-
-    /**
-     * @param BlockInterface[] $blocks
-     *
-     * @return iterable<Paragraph>
-     */
-    private function paragraphsIn(array $blocks): iterable
-    {
-        foreach ($blocks as $block) {
-            if ($block instanceof Paragraph) {
-                yield $block;
-
-                continue;
-            }
-
-            yield from $this->paragraphsIn($this->childBlocksOf($block));
-        }
-    }
-
-    /**
-     * @return BlockInterface[]
-     */
-    private function childBlocksOf(BlockInterface $block): array
-    {
-        if ($block instanceof Table) {
-            return [
-                ...($block->header() === null ? [] : [$block->header()]),
-                ...$block->rows(),
-            ];
-        }
-
-        return match (true) {
-            $block instanceof ListNode => $block->items(),
-            $block instanceof ListItem,
-            $block instanceof TableCell,
-            $block instanceof BlockQuote => $block->content(),
-            $block instanceof TableRow => $block->cells(),
-            default => [],
-        };
     }
 }

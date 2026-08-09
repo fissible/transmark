@@ -156,6 +156,23 @@ library whose core value proposition is dependency-light document
 conversion. **No follow-up migration issue filed** — this is a genuine
 no-go, not a deferred yes.
 
+**`NumberingShapeClassifier` nested-paragraph bug, found and fixed while
+building #33 (2026-08-09).** `classify()` only ever scanned
+`$document->content()` at the top level — unlike `NumberingEngine::resolve()`,
+which already recursed into `Table`/`TableRow`/`TableCell`,
+`ListNode`/`ListItem`, and `BlockQuote` via a private `paragraphsIn()`/
+`childBlocksOf()` pair. A numbered paragraph whose *only* usage was nested
+inside one of those containers (e.g. a simple numbered list living entirely
+inside a table cell) was invisible to the classifier and silently defaulted
+to "not simple" — rendering as a flat legal-style paragraph instead of a
+proper `<ol>/<li>` list, purely because of *where* it happened to be nested,
+not what its `Level` definition actually said. Extracted the shared
+recursion into `Numbering\ParagraphWalker` (used by both classes now) rather
+than duplicating it a second time. Confirmed via a dedicated
+`NumberingShapeClassifierTest` and a `HtmlWriterTableRenderingTest` case
+that a numId used only inside a cell now classifies identically to the same
+numId used at the top level.
+
 ## Status: DOCX, HTML, and Markdown semantic I/O core complete
 
 The canonical model, full numbering engine, OOXML package layer,
@@ -236,8 +253,8 @@ against the implemented HTML and OOXML conventions.
 | 8 | `fissible/transmark-xlsx` (separate package, stub only — re-scope once `OoxmlPackage` is validated by real usage) | XL (re-scope pending) | #5 (and validation from #6/#7) | [#14](https://github.com/fissible/transmark/issues/14) | Stub — needs re-scoping |
 | 9 | `DocxReader`: table support (`w:tbl` → `Table`/`TableRow`/`TableCell`) | M | #6, #7 | [#31](https://github.com/fissible/transmark/issues/31) | Not started |
 | 10 | `DocxReader`: image pass-through (`w:drawing` media extraction, no image-processing deps; WMF/EMF explicitly out of scope) | M | #5, #6 | [#32](https://github.com/fissible/transmark/issues/32) | Not started |
-| 11 | `HtmlWriter`: table support | S | `Table` node taxonomy (done); not blocked by #31 | [#33](https://github.com/fissible/transmark/issues/33) | Not started |
-| 12 | `HtmlWriter`: image embedding (base64 data-URI, no image-processing deps) | S | `Image` node taxonomy (done); not blocked by #32 | [#34](https://github.com/fissible/transmark/issues/34) | Not started |
+| 11 | `HtmlWriter`: table support | S | `Table` node taxonomy (done); not blocked by #31 | [#33](https://github.com/fissible/transmark/issues/33) | Done |
+| 12 | `HtmlWriter`: image embedding (base64 data-URI, no image-processing deps) | S | `Image` node taxonomy (done); not blocked by #32 | [#34](https://github.com/fissible/transmark/issues/34) | Done — extended `Image`/`InlineImage` with `data`/`mimeType`/`width`/`height` fields (neither issue's text specified this node shape) |
 | 13 | `Ooxml` zip-backend evaluation: `ext-zip` vs pure-PHP `nelexa/zip` (spike/decision, not a migration) | S | none | [#35](https://github.com/fissible/transmark/issues/35) | Done — no-go, keep `ext-zip` (see design decision above) |
 | 14 | `fissible/transmark-pdf` (separate package): `PdfWriter` composing `HtmlWriter` output with `dompdf/dompdf`, mirroring #13/#14's satellite-package pattern | L | `HtmlWriter` (done) | [#39](https://github.com/fissible/transmark/issues/39) | Done — released [v0.1.0](https://github.com/fissible/transmark-pdf/releases/tag/v0.1.0) |
 | 15 | CLI wrapper (`bin/transmark convert`) for reader/writer conversions | S | at least one reader/writer pair (done) | [#37](https://github.com/fissible/transmark/issues/37) | Done |
