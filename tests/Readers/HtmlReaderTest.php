@@ -199,4 +199,46 @@ final class HtmlReaderTest extends TestCase
         self::assertInstanceOf(\Fissible\Transmark\Nodes\Block\ListNode::class, $content[1]);
         self::assertSame('Nested', $content[1]->items()[0]->content()[0]->inlines()[0]->content());
     }
+
+    public function test_reads_a_blockquote(): void
+    {
+        $document = $this->read('<blockquote><p>Quoted text</p></blockquote>');
+
+        $quote = $document->content()[0];
+        self::assertInstanceOf(\Fissible\Transmark\Nodes\Block\BlockQuote::class, $quote);
+        self::assertSame('Quoted text', $quote->content()[0]->inlines()[0]->content());
+    }
+
+    public function test_reads_a_horizontal_rule(): void
+    {
+        $document = $this->read('<p>Before</p><hr><p>After</p>');
+
+        self::assertInstanceOf(\Fissible\Transmark\Nodes\Block\HorizontalRule::class, $document->content()[1]);
+    }
+
+    public function test_reads_a_code_block_with_a_language(): void
+    {
+        $document = $this->read('<pre><code class="language-php">echo 1;</code></pre>');
+
+        $codeBlock = $document->content()[0];
+        self::assertInstanceOf(\Fissible\Transmark\Nodes\Block\CodeBlock::class, $codeBlock);
+        self::assertSame('echo 1;', $codeBlock->content());
+        self::assertSame('php', $codeBlock->language());
+    }
+
+    public function test_reads_a_code_block_without_a_language(): void
+    {
+        $document = $this->read('<pre><code>plain</code></pre>');
+
+        $codeBlock = $document->content()[0];
+        self::assertSame('plain', $codeBlock->content());
+        self::assertNull($codeBlock->language());
+    }
+
+    public function test_reads_a_bare_pre_with_no_code_child(): void
+    {
+        $document = $this->read('<pre>raw preformatted text</pre>');
+
+        self::assertSame('raw preformatted text', $document->content()[0]->content());
+    }
 }

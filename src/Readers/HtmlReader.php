@@ -8,7 +8,10 @@ use Fissible\Transmark\Contracts\BlockInterface;
 use Fissible\Transmark\Contracts\InlineInterface;
 use Fissible\Transmark\Contracts\ReaderInterface;
 use Fissible\Transmark\Document;
+use Fissible\Transmark\Nodes\Block\BlockQuote;
+use Fissible\Transmark\Nodes\Block\CodeBlock;
 use Fissible\Transmark\Nodes\Block\Heading;
+use Fissible\Transmark\Nodes\Block\HorizontalRule;
 use Fissible\Transmark\Nodes\Block\ListItem;
 use Fissible\Transmark\Nodes\Block\ListNode;
 use Fissible\Transmark\Nodes\Block\Paragraph;
@@ -95,6 +98,9 @@ final class HtmlReader implements ReaderInterface
             'p' => new Paragraph($this->mapInlineChildren($node)),
             'ul' => $this->mapList($node, ListNode::TYPE_UNORDERED),
             'ol' => $this->mapList($node, ListNode::TYPE_ORDERED),
+            'blockquote' => new BlockQuote($this->mapBlockChildren($node)),
+            'hr' => new HorizontalRule(),
+            'pre' => $this->mapCodeBlock($node),
             default => null,
         };
 
@@ -161,5 +167,31 @@ final class HtmlReader implements ReaderInterface
         $start = $node->hasAttribute('start') ? (int) $node->getAttribute('start') : 1;
 
         return new ListNode($type, $items, $start);
+    }
+
+    private function mapCodeBlock(\DOMElement $node): CodeBlock
+    {
+        $codeElement = null;
+
+        foreach ($node->childNodes as $child) {
+            if ($child instanceof \DOMElement && strtolower($child->localName) === 'code') {
+                $codeElement = $child;
+                break;
+            }
+        }
+
+        $content = $codeElement !== null ? $codeElement->textContent : $node->textContent;
+        $language = null;
+
+        if ($codeElement !== null) {
+            foreach (explode(' ', $codeElement->getAttribute('class')) as $class) {
+                if (str_starts_with($class, 'language-')) {
+                    $language = substr($class, strlen('language-'));
+                    break;
+                }
+            }
+        }
+
+        return new CodeBlock($content, $language);
     }
 }
