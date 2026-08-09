@@ -146,7 +146,14 @@ final class HtmlReader implements ReaderInterface
         }
 
         if (in_array($tag, self::INLINE_TAGS, true)) {
-            $inlines = $this->mapInlineChildren($node);
+            // Transparent inline wrappers: extract their children, not the wrapper itself
+            if (in_array($tag, self::TRANSPARENT_INLINE_WRAPPERS, true)) {
+                $inlines = $this->mapInlineChildren($node);
+            } else {
+                // Real inline tags (a, strong, em, etc.): map the tag itself
+                $inline = $this->mapInline($node);
+                $inlines = $inline !== null ? [$inline] : [];
+            }
 
             return $inlines === [] ? [] : [new Paragraph($inlines)];
         }

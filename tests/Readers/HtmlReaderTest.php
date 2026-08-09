@@ -433,4 +433,70 @@ final class HtmlReaderTest extends TestCase
         self::assertStringContainsString('small', $contentText);
         self::assertStringContainsString('citation', $contentText);
     }
+
+    public function test_reads_a_realistic_messy_page_end_to_end(): void
+    {
+        $html = file_get_contents(__DIR__.'/../fixtures/html/messy-page.html');
+        $document = (new HtmlReader())->read($html);
+
+        $content = $document->content();
+        self::assertNotEmpty($content);
+
+        // header/nav/main/article/footer are all unwrapped, contributing their
+        // content directly rather than nesting or being dropped.
+        self::assertInstanceOf(\Fissible\Transmark\Nodes\Inline\Link::class, $this->firstInline($content[0]));
+        self::assertInstanceOf(\Fissible\Transmark\Nodes\Block\Heading::class, $content[1]);
+        self::assertSame('Article Title', $content[1]->inlines()[0]->content());
+
+        $rendered = array_map(static fn ($block) => $block::class, $content);
+        self::assertContains(\Fissible\Transmark\Nodes\Block\ListNode::class, $rendered);
+        self::assertContains(\Fissible\Transmark\Nodes\Block\BlockQuote::class, $rendered);
+        self::assertContains(\Fissible\Transmark\Nodes\Block\CodeBlock::class, $rendered);
+
+        // script/style/title/comment content must never appear anywhere in the tree.
+        $text = $this->flattenText($content);
+        self::assertStringNotContainsString('should be stripped', $text);
+        self::assertStringNotContainsString('editorial note', $text);
+        self::assertStringNotContainsString('font-family', $text);
+    }
+
+    public function test_reads_mixed_case_tags(): void
+    {
+        $html = file_get_contents(__DIR__.'/../fixtures/html/mixed-case-tags.html');
+        $document = (new HtmlReader())->read($html);
+
+        $inlines = $document->content()[0]->inlines();
+        self::assertInstanceOf(\Fissible\Transmark\Nodes\Inline\Strong::class, $inlines[1]);
+    }
+
+    private function firstInline(\Fissible\Transmark\Contracts\BlockInterface $block): \Fissible\Transmark\Contracts\InlineInterface
+    {
+        return $block->inlines()[0];
+    }
+
+    /**
+     * @param \Fissible\Transmark\Contracts\BlockInterface[] $blocks
+     */
+    private function flattenText(array $blocks): string
+    {
+        $text = '';
+
+        foreach ($blocks as $block) {
+            if (method_exists($block, 'inlines')) {
+                foreach ($block->inlines() as $inline) {
+                    $text .= method_exists($inline, 'content') ? $inline->content() : '';
+                }
+            }
+            if (method_exists($block, 'content') && is_array($block->content())) {
+                $text .= $this->flattenText($block->content());
+            }
+            if (method_exists($block, 'items')) {
+                foreach ($block->items() as $item) {
+                    $text .= $this->flattenText($item->content());
+                }
+            }
+        }
+
+        return $text;
+    }
 }

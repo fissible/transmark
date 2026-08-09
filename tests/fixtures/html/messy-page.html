@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Test Page</title>
+  <meta charset="utf-8">
+  <style>body { font-family: sans-serif; }</style>
+  <script>console.log('should be stripped');</script>
+</head>
+<body>
+  <header>
+    <nav><a href="/">Home</a></nav>
+  </header>
+  <main>
+    <article>
+      <h1>Article Title</h1>
+      <p>First paragraph with <strong>bold</strong> and <em>italic</em> text.</p>
+      <!-- editorial note, should be stripped -->
+      <ul>
+        <li>Point one</li>
+        <li>Point two with <a href="https://example.com">a link</a></li>
+      </ul>
+      <blockquote><p>A quoted remark.</p></blockquote>
+      <pre><code class="language-php">echo "hi";</code></pre>
+    </article>
+  </main>
+  <footer>
+    <p>Copyright notice</p>
+  </footer>
+</body>
+</html>
