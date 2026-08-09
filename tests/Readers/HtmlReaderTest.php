@@ -9,6 +9,7 @@ use Fissible\Transmark\Nodes\Block\Paragraph;
 use Fissible\Transmark\Nodes\Inline\Text;
 use Fissible\Transmark\Readers\Exception\HtmlParseException;
 use Fissible\Transmark\Readers\HtmlReader;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class HtmlReaderTest extends TestCase
@@ -377,9 +378,7 @@ final class HtmlReaderTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider unmappableContentProvider
-     */
+    #[DataProvider('unmappableContentProvider')]
     public function test_throws_on_unmappable_content_elements(string $html): void
     {
         $this->expectException(HtmlParseException::class);
