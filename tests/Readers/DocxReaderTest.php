@@ -14,6 +14,7 @@ use Fissible\Transmark\Nodes\Block\Table;
 use Fissible\Transmark\Nodes\Block\TableCell;
 use Fissible\Transmark\Nodes\Block\TableRow;
 use Fissible\Transmark\Nodes\Inline\Emphasis;
+use Fissible\Transmark\Nodes\Inline\InlineImage;
 use Fissible\Transmark\Nodes\Inline\LineBreak;
 use Fissible\Transmark\Nodes\Inline\Strike;
 use Fissible\Transmark\Nodes\Inline\Strong;
@@ -369,6 +370,106 @@ final class DocxReaderTest extends TestCase
         self::assertSame(
             'Nested',
             $nestedTable->rows()[0]->cells()[0]->content()[0]->inlines()[0]->content(),
+        );
+    }
+
+    public function test_an_inline_drawing_resolves_to_an_inline_image_with_bytes_and_dimensions(): void
+    {
+        $document = (new DocxReader())->read($this->docxWithImage(
+            '<w:p><w:r>'.$this->drawingXml('rId4', 952500, 476250, 'A photo', 'Picture 1').'</w:r></w:p>',
+            ['rId4' => 'media/image1.png'],
+            ['word/media/image1.png' => 'fake-png-bytes'],
+        ));
+
+        $inlines = $document->content()[0]->inlines();
+        self::assertCount(1, $inlines);
+        $image = $inlines[0];
+        self::assertInstanceOf(InlineImage::class, $image);
+        self::assertSame('word/media/image1.png', $image->src());
+        self::assertSame('A photo', $image->alt());
+        self::assertSame('Picture 1', $image->title());
+        self::assertSame('fake-png-bytes', $image->data());
+        self::assertSame('image/png', $image->mimeType());
+        self::assertSame(100, $image->width());
+        self::assertSame(50, $image->height());
+    }
+
+    public function test_a_drawing_referencing_a_wmf_image_is_skipped_without_crashing(): void
+    {
+        $document = (new DocxReader())->read($this->docxWithImage(
+            '<w:p><w:r><w:t>Before </w:t></w:r><w:r>'
+            .$this->drawingXml('rId5', 952500, 476250)
+            .'</w:r><w:r><w:t> After</w:t></w:r></w:p>',
+            ['rId5' => 'media/image2.wmf'],
+            ['word/media/image2.wmf' => 'fake-wmf-bytes'],
+        ));
+
+        $inlines = $document->content()[0]->inlines();
+        self::assertContainsOnlyInstancesOf(Text::class, $inlines);
+        self::assertSame('Before  After', $this->paragraphText($document->content()[0]));
+    }
+
+    public function test_a_drawing_with_no_matching_relationship_is_skipped_without_crashing(): void
+    {
+        $document = (new DocxReader())->read($this->docxWithImage(
+            '<w:p><w:r>'.$this->drawingXml('rIdMissing', 952500, 476250).'</w:r></w:p>',
+            [],
+            [],
+        ));
+
+        self::assertSame([], $document->content()[0]->inlines());
+    }
+
+    /**
+     * @param array<string, string> $relationships rId => Target (relative to word/)
+     * @param array<string, string> $mediaParts    full package part path => raw bytes
+     */
+    private function docxWithImage(string $body, array $relationships, array $mediaParts): string
+    {
+        $relationshipXml = '';
+        foreach ($relationships as $id => $target) {
+            $relationshipXml .= sprintf(
+                '<Relationship Id="%s" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="%s"/>',
+                $id,
+                $target,
+            );
+        }
+
+        $relsXml = '<?xml version="1.0" encoding="UTF-8"?>'
+            .'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            .$relationshipXml
+            .'</Relationships>';
+
+        return $this->docx([
+            'word/document.xml' => $this->documentXml($body),
+            'word/_rels/document.xml.rels' => $relsXml,
+            ...$mediaParts,
+        ]);
+    }
+
+    private function drawingXml(string $relationshipId, int $cx, int $cy, string $alt = '', string $name = ''): string
+    {
+        return sprintf(
+            '<w:drawing>'
+            .'<wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">'
+            .'<wp:extent cx="%d" cy="%d"/>'
+            .'<wp:docPr id="1" name="%s" descr="%s"/>'
+            .'<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+            .'<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+            .'<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+            .'<pic:blipFill>'
+            .'<a:blip xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="%s"/>'
+            .'</pic:blipFill>'
+            .'</pic:pic>'
+            .'</a:graphicData>'
+            .'</a:graphic>'
+            .'</wp:inline>'
+            .'</w:drawing>',
+            $cx,
+            $cy,
+            htmlspecialchars($name, ENT_XML1),
+            htmlspecialchars($alt, ENT_XML1),
+            $relationshipId,
         );
     }
 

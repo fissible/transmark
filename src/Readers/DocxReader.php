@@ -16,6 +16,7 @@ use Fissible\Transmark\Nodes\Block\Table;
 use Fissible\Transmark\Nodes\Block\TableCell;
 use Fissible\Transmark\Nodes\Block\TableRow;
 use Fissible\Transmark\Nodes\Inline\Emphasis;
+use Fissible\Transmark\Nodes\Inline\InlineImage;
 use Fissible\Transmark\Nodes\Inline\LineBreak;
 use Fissible\Transmark\Nodes\Inline\Strike;
 use Fissible\Transmark\Nodes\Inline\Strong;
@@ -44,6 +45,29 @@ final class DocxReader implements ReaderInterface
 {
     private const WORD_NAMESPACE = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
+    private const DRAWING_WP_NAMESPACE = 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing';
+
+    private const DRAWING_A_NAMESPACE = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+
+    private const RELATIONSHIPS_ATTR_NAMESPACE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+
+    private const PACKAGE_RELATIONSHIPS_NAMESPACE = 'http://schemas.openxmlformats.org/package/2006/relationships';
+
+    private const IMAGE_RELATIONSHIP_TYPE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image';
+
+    /** 96 DPI: 914400 EMU per inch / 96 pixels per inch. */
+    private const EMU_PER_PIXEL = 9525;
+
+    private const IMAGE_MIME_TYPES = [
+        'png' => 'image/png',
+        'jpg' => 'image/jpeg',
+        'jpeg' => 'image/jpeg',
+        'gif' => 'image/gif',
+        'bmp' => 'image/bmp',
+        'tif' => 'image/tiff',
+        'tiff' => 'image/tiff',
+    ];
+
     public function read(string $content): Document
     {
         $path = tempnam(sys_get_temp_dir(), 'transmark-docx-');
@@ -69,6 +93,7 @@ final class DocxReader implements ReaderInterface
             return $this->parseDocument(
                 $documentXml,
                 $this->parseNumbering($package->part('word/numbering.xml')),
+                $this->resolveImages($package, $package->part('word/_rels/document.xml.rels')),
             );
         } finally {
             $package?->close();
@@ -82,19 +107,70 @@ final class DocxReader implements ReaderInterface
     private function parseDocument(
         \DOMDocument $documentXml,
         NumberingDefinitions $numbering,
+        array $images,
     ): Document {
         $body = $documentXml->getElementsByTagNameNS(self::WORD_NAMESPACE, 'body')->item(0);
         if (!$body instanceof \DOMElement) {
             return new Document(numbering: $numbering);
         }
 
-        return new Document($this->parseBodyChildren($body), $numbering);
+        return new Document($this->parseBodyChildren($body, $images), $numbering);
     }
 
     /**
+     * Eagerly resolves every image relationship to its raw bytes and
+     * inferred MIME type, keyed by relationship id, so the paragraph
+     * parsing chain only ever deals with a plain array instead of the live
+     * package. Non-image relationships (hyperlinks, etc.) are skipped via
+     * the relationship Type check; image formats with no web/PDF
+     * equivalent (WMF/EMF - Word's own vector formats) fall out of
+     * IMAGE_MIME_TYPES and are skipped too, so a drawing referencing one
+     * later just resolves to no image rather than throwing.
+     *
+     * @return array<string, array{path: string, data: string, mimeType: string}>
+     */
+    private function resolveImages(OoxmlPackage $package, ?\DOMDocument $relationshipsXml): array
+    {
+        if ($relationshipsXml === null) {
+            return [];
+        }
+
+        $images = [];
+
+        foreach ($relationshipsXml->getElementsByTagNameNS(self::PACKAGE_RELATIONSHIPS_NAMESPACE, 'Relationship') as $relationship) {
+            if (!$relationship instanceof \DOMElement || $relationship->getAttribute('Type') !== self::IMAGE_RELATIONSHIP_TYPE) {
+                continue;
+            }
+
+            $id = $relationship->getAttribute('Id');
+            $target = $relationship->getAttribute('Target');
+            if ($id === '' || $target === '') {
+                continue;
+            }
+
+            $mimeType = self::IMAGE_MIME_TYPES[strtolower(pathinfo($target, PATHINFO_EXTENSION))] ?? null;
+            if ($mimeType === null) {
+                continue;
+            }
+
+            $partPath = 'word/'.ltrim($target, '/');
+            $data = $package->rawPart($partPath);
+            if ($data === null) {
+                continue;
+            }
+
+            $images[$id] = ['path' => $partPath, 'data' => $data, 'mimeType' => $mimeType];
+        }
+
+        return $images;
+    }
+
+    /**
+     * @param array<string, array{path: string, data: string, mimeType: string}> $images
+     *
      * @return BlockInterface[]
      */
-    private function parseBodyChildren(\DOMElement $container): array
+    private function parseBodyChildren(\DOMElement $container, array $images): array
     {
         $content = [];
 
@@ -104,9 +180,9 @@ final class DocxReader implements ReaderInterface
             }
 
             if ($child->localName === 'p') {
-                $content[] = $this->parseParagraph($child);
+                $content[] = $this->parseParagraph($child, $images);
             } elseif ($child->localName === 'tbl') {
-                $content[] = $this->parseTable($child);
+                $content[] = $this->parseTable($child, $images);
             }
         }
 
@@ -119,7 +195,7 @@ final class DocxReader implements ReaderInterface
      * dropped, mirroring HtmlReader's/PdfReader's "only the first heading
      * row" convention elsewhere in this project.
      */
-    private function parseTable(\DOMElement $tbl): Table
+    private function parseTable(\DOMElement $tbl, array $images): Table
     {
         $header = null;
         $rows = [];
@@ -133,7 +209,7 @@ final class DocxReader implements ReaderInterface
                 continue;
             }
 
-            $row = $this->parseTableRow($child);
+            $row = $this->parseTableRow($child, $images);
 
             if ($header === null && $this->isHeaderRow($child)) {
                 $header = $row;
@@ -152,7 +228,7 @@ final class DocxReader implements ReaderInterface
         return $this->directChild($properties, 'tblHeader') !== null;
     }
 
-    private function parseTableRow(\DOMElement $tr): TableRow
+    private function parseTableRow(\DOMElement $tr, array $images): TableRow
     {
         $cells = [];
 
@@ -165,7 +241,7 @@ final class DocxReader implements ReaderInterface
                 continue;
             }
 
-            $cells[] = $this->parseTableCell($child);
+            $cells[] = $this->parseTableCell($child, $images);
         }
 
         return new TableRow($cells);
@@ -180,13 +256,13 @@ final class DocxReader implements ReaderInterface
      * originating cell's rowspan. No content is lost; the merge itself
      * doesn't round-trip.
      */
-    private function parseTableCell(\DOMElement $tc): TableCell
+    private function parseTableCell(\DOMElement $tc, array $images): TableCell
     {
         $properties = $this->directChild($tc, 'tcPr');
         $gridSpan = $this->attributeValue($this->directChild($properties, 'gridSpan'), 'val');
         $colspan = $gridSpan === null ? 1 : max(1, (int) $gridSpan);
 
-        return new TableCell($this->parseBodyChildren($tc), $colspan);
+        return new TableCell($this->parseBodyChildren($tc, $images), $colspan);
     }
 
     private function parseNumbering(?\DOMDocument $numberingXml): NumberingDefinitions
@@ -348,10 +424,10 @@ final class DocxReader implements ReaderInterface
         return new Num((int) $numId, (int) $abstractNumId, $levelOverrides);
     }
 
-    private function parseParagraph(\DOMElement $paragraphElement): BlockInterface
+    private function parseParagraph(\DOMElement $paragraphElement, array $images): BlockInterface
     {
         $properties = $this->directChild($paragraphElement, 'pPr');
-        $inlines = $this->parseInlineContainer($paragraphElement);
+        $inlines = $this->parseInlineContainer($paragraphElement, $images);
 
         if ($this->isHorizontalRule($paragraphElement, $properties)) {
             return new HorizontalRule();
@@ -397,9 +473,11 @@ final class DocxReader implements ReaderInterface
     }
 
     /**
+     * @param array<string, array{path: string, data: string, mimeType: string}> $images
+     *
      * @return InlineInterface[]
      */
-    private function parseInlineContainer(\DOMElement $container): array
+    private function parseInlineContainer(\DOMElement $container, array $images): array
     {
         $inlines = [];
 
@@ -409,7 +487,7 @@ final class DocxReader implements ReaderInterface
             }
 
             if ($child->localName === 'r') {
-                foreach ($this->parseRun($child) as $inline) {
+                foreach ($this->parseRun($child, $images) as $inline) {
                     $inlines[] = $inline;
                 }
 
@@ -420,7 +498,7 @@ final class DocxReader implements ReaderInterface
                 continue;
             }
 
-            foreach ($this->parseInlineContainer($child) as $inline) {
+            foreach ($this->parseInlineContainer($child, $images) as $inline) {
                 $inlines[] = $inline;
             }
         }
@@ -429,9 +507,11 @@ final class DocxReader implements ReaderInterface
     }
 
     /**
+     * @param array<string, array{path: string, data: string, mimeType: string}> $images
+     *
      * @return InlineInterface[]
      */
-    private function parseRun(\DOMElement $run): array
+    private function parseRun(\DOMElement $run, array $images): array
     {
         $children = [];
 
@@ -444,6 +524,11 @@ final class DocxReader implements ReaderInterface
                 $children[] = new Text($child->textContent);
             } elseif ($child->localName === 'br') {
                 $children[] = new LineBreak();
+            } elseif ($child->localName === 'drawing') {
+                $image = $this->parseDrawing($child, $images);
+                if ($image !== null) {
+                    $children[] = $image;
+                }
             }
         }
 
@@ -481,6 +566,62 @@ final class DocxReader implements ReaderInterface
         }
 
         return $wrapped;
+    }
+
+    /**
+     * w:drawing always lives inside a w:r inside a w:p in real OOXML -
+     * there is no bare "block-level image" concept the way HTML has <img>
+     * outside any paragraph - so every drawing resolves to an
+     * InlineImage, never a block Image. This covers both wp:inline and
+     * wp:anchor (floating) drawings identically, since neither the
+     * position/wrapping info nor the inline-vs-anchor distinction is
+     * modeled here - only the referenced image and its declared size.
+     * Returns null (skipping just this drawing, not the surrounding
+     * run/paragraph) when the relationship wasn't resolved to a supported
+     * image format, e.g. a WMF/EMF vector image or a dangling reference.
+     *
+     * @param array<string, array{path: string, data: string, mimeType: string}> $images
+     */
+    private function parseDrawing(\DOMElement $drawing, array $images): ?InlineImage
+    {
+        $blip = $drawing->getElementsByTagNameNS(self::DRAWING_A_NAMESPACE, 'blip')->item(0);
+        if (!$blip instanceof \DOMElement) {
+            return null;
+        }
+
+        $relationshipId = $blip->getAttributeNS(self::RELATIONSHIPS_ATTR_NAMESPACE, 'embed');
+        if ($relationshipId === '' || !isset($images[$relationshipId])) {
+            return null;
+        }
+
+        $image = $images[$relationshipId];
+
+        $extent = $drawing->getElementsByTagNameNS(self::DRAWING_WP_NAMESPACE, 'extent')->item(0);
+        $width = $extent instanceof \DOMElement ? $this->emuToPixels($extent->getAttribute('cx')) : null;
+        $height = $extent instanceof \DOMElement ? $this->emuToPixels($extent->getAttribute('cy')) : null;
+
+        $docPr = $drawing->getElementsByTagNameNS(self::DRAWING_WP_NAMESPACE, 'docPr')->item(0);
+        $alt = $docPr instanceof \DOMElement ? $docPr->getAttribute('descr') : '';
+        $name = $docPr instanceof \DOMElement ? $docPr->getAttribute('name') : '';
+
+        return new InlineImage(
+            src: $image['path'],
+            alt: $alt,
+            title: $name === '' ? null : $name,
+            data: $image['data'],
+            mimeType: $image['mimeType'],
+            width: $width,
+            height: $height,
+        );
+    }
+
+    private function emuToPixels(string $value): ?int
+    {
+        if ($value === '' || !is_numeric($value)) {
+            return null;
+        }
+
+        return (int) round(((float) $value) / self::EMU_PER_PIXEL);
     }
 
     private function isEnabled(?\DOMElement $property): bool

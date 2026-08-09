@@ -156,6 +156,40 @@ library whose core value proposition is dependency-light document
 conversion. **No follow-up migration issue filed** — this is a genuine
 no-go, not a deferred yes.
 
+**`DocxReader` table + image support (2026-08-09/#31, #32).** `parseTable`/
+`parseTableRow`/`parseTableCell` reuse the same `parseBodyChildren()`
+dispatcher used for the document body, so table-cell content (including
+nested tables, and numbered paragraphs inside a cell) goes through the
+existing paragraph/numbering pipeline unchanged — nested tables came
+through "for free," matching #31's own scope note. Only the first
+`w:tblHeader`-marked row becomes `Table::header()`; `w:gridSpan` reads as
+`colspan`; `w:vMerge` (vertical merge) is deliberately **not**
+reconstructed as `rowspan` — confirmed by reading `DocxWriter` directly
+that it already throws on `rowspan !== 1` (no vMerge write support
+either), so a continuation cell just reads as its own ordinary cell; no
+content is lost, only the merge itself doesn't round-trip. An empty
+`TableCell([])` round-trips as one empty `Paragraph`, since Word requires
+at least one paragraph per cell — documented as expected loss, not a bug.
+
+For images, `word/_rels/document.xml.rels` is resolved once per `read()`
+call into a flat `rId → {path, data, mimeType}` map (image-typed
+relationships only; MIME type inferred from the media file extension),
+then threaded as a plain parameter through the paragraph-parsing chain —
+matching the class's existing param-passing style rather than introducing
+instance state. `w:drawing` (both `wp:inline` and `wp:anchor`, treated
+identically since position/wrapping isn't modeled) always resolves to an
+`InlineImage`, never a block `Image` — OOXML has no bare-image-outside-a-
+paragraph concept the way HTML has `<img>`. Declared size comes from
+`wp:extent`'s `cx`/`cy` (EMU, converted to pixels via `÷ 9525`, the
+standard 96-DPI EMU-per-pixel constant). WMF/EMF and any other
+unrecognized media extension are skipped per-drawing (no `InlineImage`
+emitted for that one drawing; the rest of the paragraph/document reads
+normally) rather than thrown on, consistent with #32's own declared
+non-goal. `DocxWriter` throws `UnsupportedNodeException` on both `Image`
+and `InlineImage` (confirmed by reading it directly), so there is no
+writer-side round trip to test — coverage is hand-built-fixture tests in
+`DocxReaderTest` against `read()`, the same shape #31's table tests use.
+
 **`NumberingShapeClassifier` nested-paragraph bug, found and fixed while
 building #33 (2026-08-09).** `classify()` only ever scanned
 `$document->content()` at the top level — unlike `NumberingEngine::resolve()`,
@@ -251,8 +285,8 @@ against the implemented HTML and OOXML conventions.
 | 6 | Semantic-idempotence test harness: hand-write ASTs, round-trip through each reader/writer pair, assert tree equality (with explicit "expected lossy" markers, e.g. legal outlines through Markdown) | M | #8, #11 (minimum, Markdown ⇄ Markdown); #27 for DOCX ⇄ DOCX | [#12](https://github.com/fissible/transmark/issues/12) | Done |
 | 7 | `fissible/transmark-blade` (separate package, stub only — re-scope once #9/#10's `HtmlWriter` output conventions settle) | M (re-scope pending) | #9, #10 | [#13](https://github.com/fissible/transmark/issues/13) | Stub — needs re-scoping |
 | 8 | `fissible/transmark-xlsx` (separate package, stub only — re-scope once `OoxmlPackage` is validated by real usage) | XL (re-scope pending) | #5 (and validation from #6/#7) | [#14](https://github.com/fissible/transmark/issues/14) | Stub — needs re-scoping |
-| 9 | `DocxReader`: table support (`w:tbl` → `Table`/`TableRow`/`TableCell`) | M | #6, #7 | [#31](https://github.com/fissible/transmark/issues/31) | Not started |
-| 10 | `DocxReader`: image pass-through (`w:drawing` media extraction, no image-processing deps; WMF/EMF explicitly out of scope) | M | #5, #6 | [#32](https://github.com/fissible/transmark/issues/32) | Not started |
+| 9 | `DocxReader`: table support (`w:tbl` → `Table`/`TableRow`/`TableCell`) | M | #6, #7 | [#31](https://github.com/fissible/transmark/issues/31) | Done |
+| 10 | `DocxReader`: image pass-through (`w:drawing` media extraction, no image-processing deps; WMF/EMF explicitly out of scope) | M | #5, #6 | [#32](https://github.com/fissible/transmark/issues/32) | Done |
 | 11 | `HtmlWriter`: table support | S | `Table` node taxonomy (done); not blocked by #31 | [#33](https://github.com/fissible/transmark/issues/33) | Done |
 | 12 | `HtmlWriter`: image embedding (base64 data-URI, no image-processing deps) | S | `Image` node taxonomy (done); not blocked by #32 | [#34](https://github.com/fissible/transmark/issues/34) | Done — extended `Image`/`InlineImage` with `data`/`mimeType`/`width`/`height` fields (neither issue's text specified this node shape) |
 | 13 | `Ooxml` zip-backend evaluation: `ext-zip` vs pure-PHP `nelexa/zip` (spike/decision, not a migration) | S | none | [#35](https://github.com/fissible/transmark/issues/35) | Done — no-go, keep `ext-zip` (see design decision above) |
@@ -365,12 +399,24 @@ but reversed after checking licenses: `mpdf` is GPL-2.0-only and requires
 `ext-gd`; `dompdf` (LGPL-2.1, `ext-mbstring` only) is the safer default
 for a dependency library meant to be composed into other apps.
 
-**Next task:** #31 and #32 (`DocxReader` table + image support) close the
-gap the semantic-idempotence harness already documents as lossy; #33/#34
-are their `HtmlWriter`-side counterparts and can proceed in parallel.
-#35 (zip-backend evaluation) and #39 (`transmark-pdf` scaffold) are
-independent, pick-up-anytime tasks. #37 (CLI) benefits from at least
-tables/images landing first but isn't blocked on them.
+**Completed (2026-08-09, #35):** Zip-backend spike — decision: keep
+`ext-zip`, no migration (see design decisions above).
+
+**Completed (2026-08-09, #37, via PR #54):** `bin/transmark` CLI wrapper
+(`convert <input> <output> [--from=FORMAT] [--to=FORMAT]`), hand-rolled
+arg parsing, no new Composer dependency.
+
+**Completed (2026-08-09, #33/#34, via PR #55):** `HtmlWriter` table +
+image rendering. Along the way, found and fixed a `NumberingShapeClassifier`
+bug (see design decisions above) via a shared `Numbering\ParagraphWalker`.
+
+**Completed (2026-08-09, #31/#32):** `DocxReader` table + image support
+(see design decisions above).
+
+**Next task:** the remaining backlog is `transmark-pdf#2`/`#3` (hardening
+and CI/docs polish in the satellite package) and `transmark#13`/`#14`
+(`transmark-blade`/`transmark-xlsx` stubs — still marked "needs
+re-scoping").
 
 **Release decision:** v0.3.0 shipped (native DOCX output + cross-format
 semantic-idempotence contract). No release currently pending.
