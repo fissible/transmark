@@ -5,8 +5,9 @@ document model, with faithful multi-level numbering resolution and
 pluggable readers/writers for DOCX, Markdown, and HTML — no system
 binaries required.
 
-> **Status: pre-alpha.** The document model, numbering engine, DOCX and
-> Markdown readers, and DOCX, HTML, and Markdown writers are implemented.
+> **Status: pre-alpha.** The document model, numbering engine, DOCX,
+> Markdown, and HTML readers, and DOCX, HTML, and Markdown writers are
+> implemented.
 > Semantic round-trip tests cover the supported Markdown and DOCX semantics;
 > broader node coverage remains on the roadmap.
 
@@ -58,10 +59,30 @@ concatenate counters across levels. Those paragraphs use
 `class="numbered-paragraph legal-level-N"`, where `N` is the zero-based OOXML
 numbering level, so consumers can style each indentation depth.
 
+## Reading HTML
+
+`HtmlReader` accepts arbitrary, real-world HTML — not only HTML this library
+wrote:
+
+```php
+use Fissible\Transmark\Readers\HtmlReader;
+
+$document = (new HtmlReader())->read(file_get_contents('/path/to/page.html'));
+```
+
+It is best-effort with a hard failure mode rather than a silently lossy one.
+Scaffolding (`script`, `style`, `head`, `meta`, `title`, `noscript`, HTML
+comments) is stripped silently; unrecognized containers and wrappers (`div`,
+`section`, `ins`, `font`, ...) are unwrapped transparently so their content
+still lands in the tree; and genuinely unmappable content — forms, embeds and
+media (`form`, `button`, `iframe`, `svg`, `video`, ...) plus any custom element
+— throws `HtmlParseException` naming the offending tag, so you can find and
+replace it instead of losing it.
+
 ## Planned packages
 
 - `fissible/transmark` (this repo) — document model, numbering engine,
-  DOCX/Markdown readers, DOCX/HTML/Markdown writers.
+  DOCX/Markdown/HTML readers, DOCX/HTML/Markdown writers.
 - `fissible/transmark-blade` — Laravel Blade adapter (separate package).
 - `fissible/transmark-xlsx` — XLSX reader/writer sharing this package's
   OOXML/zip layer.
