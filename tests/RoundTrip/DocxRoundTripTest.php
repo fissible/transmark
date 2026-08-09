@@ -195,26 +195,61 @@ final class DocxRoundTripTest extends TestCase
         );
     }
 
-    public function test_tables_are_documented_as_unread_by_the_current_docxreader(): void
+    public function test_tables_are_idempotent_through_docx(): void
     {
-        $document = new Document([
+        $this->assertRoundTrip(new Document([
             $this->paragraph('Before'),
-            new Table([new TableRow([
-                new TableCell([$this->paragraph('A')]),
-                new TableCell([$this->paragraph('B')]),
-            ])]),
+            new Table(
+                rows: [new TableRow([
+                    new TableCell([$this->paragraph('A')]),
+                    new TableCell([$this->paragraph('B')], colspan: 2),
+                ])],
+                header: new TableRow([
+                    new TableCell([$this->paragraph('Col 1')]),
+                    new TableCell([$this->paragraph('Col 2')]),
+                ]),
+            ),
             $this->paragraph('After'),
+        ]));
+    }
+
+    public function test_a_numbered_paragraph_inside_a_table_cell_is_idempotent_through_docx(): void
+    {
+        $definitions = new NumberingDefinitions(
+            abstractNums: [1 => new AbstractNum(1, [0 => new Level(0, NumberFormat::Decimal, '%1.')])],
+            nums: [10 => new Num(10, 1)],
+        );
+
+        $this->assertRoundTrip(new Document(
+            content: [
+                new Table([new TableRow([
+                    new TableCell([$this->numberedParagraph('Item one', 10, 0)]),
+                ])]),
+            ],
+            numbering: $definitions,
+        ));
+    }
+
+    public function test_an_empty_table_cell_gains_an_explicit_empty_paragraph_through_docx(): void
+    {
+        // DocxWriter must emit at least one <w:p> per cell (Word requires
+        // it), so a genuinely empty TableCell([]) cannot round-trip
+        // byte-for-byte - it comes back with one empty Paragraph instead of
+        // zero blocks. Documented, expected loss, not a bug: the two are
+        // visually and semantically indistinguishable in a table cell.
+        $document = new Document([
+            new Table([new TableRow([new TableCell([])])]),
         ]);
 
         TreeEquivalence::assertExpectedLoss(
             $document,
             $this->roundTrip($document),
-            'DocxWriter emits tables, but the current DocxReader only visits body paragraphs.',
-            function (Document $actual): void {
-                self::assertSame(
-                    ['Before', 'After'],
-                    array_map($this->paragraphText(...), $actual->content()),
-                );
+            'DocxWriter inserts an empty <w:p> into any cell with no content, since Word requires at least one paragraph per cell.',
+            static function (Document $actual): void {
+                $cellContent = $actual->content()[0]->rows()[0]->cells()[0]->content();
+                self::assertCount(1, $cellContent);
+                self::assertInstanceOf(Paragraph::class, $cellContent[0]);
+                self::assertSame([], $cellContent[0]->inlines());
             },
         );
     }

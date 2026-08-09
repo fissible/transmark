@@ -10,7 +10,11 @@ use Fissible\Transmark\Nodes\Block\BlockQuote;
 use Fissible\Transmark\Nodes\Block\Heading;
 use Fissible\Transmark\Nodes\Block\HorizontalRule;
 use Fissible\Transmark\Nodes\Block\Paragraph;
+use Fissible\Transmark\Nodes\Block\Table;
+use Fissible\Transmark\Nodes\Block\TableCell;
+use Fissible\Transmark\Nodes\Block\TableRow;
 use Fissible\Transmark\Nodes\Inline\Emphasis;
+use Fissible\Transmark\Nodes\Inline\InlineImage;
 use Fissible\Transmark\Nodes\Inline\LineBreak;
 use Fissible\Transmark\Nodes\Inline\Strike;
 use Fissible\Transmark\Nodes\Inline\Strong;
@@ -141,8 +145,7 @@ final class DocxReaderTest extends TestCase
     public function test_unrecognized_content_does_not_throw_and_supported_text_is_preserved(): void
     {
         $document = $this->readBody(
-            '<w:tbl><w:tr><w:tc><w:p><w:r><w:t>Skipped table</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
-            .'<w:p>'
+            '<w:p>'
             .'<w:empty/>'
             .'<w:custom><w:r><w:t>Flattened</w:t></w:r></w:custom>'
             .'<w:r><w:drawing/><w:t> text</w:t><w:unknown/></w:r>'
@@ -217,6 +220,267 @@ final class DocxReaderTest extends TestCase
         self::assertSame('strike', $this->wrappedText($paragraph->inlines()[1]));
         self::assertSame('super', $this->wrappedText($paragraph->inlines()[2]));
         self::assertSame('sub', $this->wrappedText($paragraph->inlines()[3]));
+    }
+
+    public function test_a_table_with_a_header_row_and_body_rows_reads_correctly(): void
+    {
+        $document = $this->readBody(
+            $this->paragraphXml('Before')
+            .'<w:tbl>'
+            .'<w:tr><w:trPr><w:tblHeader/></w:trPr>'
+            .'<w:tc><w:tcPr/>'.$this->paragraphXml('Name').'</w:tc>'
+            .'<w:tc><w:tcPr/>'.$this->paragraphXml('Age').'</w:tc>'
+            .'</w:tr>'
+            .'<w:tr>'
+            .'<w:tc><w:tcPr/>'.$this->paragraphXml('Alice').'</w:tc>'
+            .'<w:tc><w:tcPr/>'.$this->paragraphXml('30').'</w:tc>'
+            .'</w:tr>'
+            .'<w:tr>'
+            .'<w:tc><w:tcPr/>'.$this->paragraphXml('Bob').'</w:tc>'
+            .'<w:tc><w:tcPr/>'.$this->paragraphXml('25').'</w:tc>'
+            .'</w:tr>'
+            .'</w:tbl>'
+            .$this->paragraphXml('After'),
+        );
+
+        $content = $document->content();
+        self::assertCount(3, $content);
+        self::assertSame('Before', $content[0]->inlines()[0]->content());
+
+        $table = $content[1];
+        self::assertInstanceOf(Table::class, $table);
+
+        $header = $table->header();
+        self::assertInstanceOf(TableRow::class, $header);
+        self::assertSame('Name', $this->cellText($header->cells()[0]));
+        self::assertSame('Age', $this->cellText($header->cells()[1]));
+
+        $rows = $table->rows();
+        self::assertCount(2, $rows);
+        self::assertSame('Alice', $this->cellText($rows[0]->cells()[0]));
+        self::assertSame('30', $this->cellText($rows[0]->cells()[1]));
+        self::assertSame('Bob', $this->cellText($rows[1]->cells()[0]));
+        self::assertSame('25', $this->cellText($rows[1]->cells()[1]));
+
+        self::assertSame('After', $content[2]->inlines()[0]->content());
+    }
+
+    public function test_a_table_with_no_header_row_has_a_null_header(): void
+    {
+        $document = $this->readBody(
+            '<w:tbl>'
+            .'<w:tr><w:tc><w:tcPr/>'.$this->paragraphXml('A').'</w:tc></w:tr>'
+            .'<w:tr><w:tc><w:tcPr/>'.$this->paragraphXml('B').'</w:tc></w:tr>'
+            .'</w:tbl>',
+        );
+
+        $table = $document->content()[0];
+        self::assertInstanceOf(Table::class, $table);
+        self::assertNull($table->header());
+        self::assertCount(2, $table->rows());
+    }
+
+    public function test_only_the_first_tblheader_marked_row_becomes_the_table_header(): void
+    {
+        $document = $this->readBody(
+            '<w:tbl>'
+            .'<w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:tcPr/>'.$this->paragraphXml('H1').'</w:tc></w:tr>'
+            .'<w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:tcPr/>'.$this->paragraphXml('H2').'</w:tc></w:tr>'
+            .'</w:tbl>',
+        );
+
+        $table = $document->content()[0];
+        self::assertInstanceOf(Table::class, $table);
+        self::assertSame('H1', $this->cellText($table->header()->cells()[0]));
+        self::assertCount(1, $table->rows());
+        self::assertSame('H2', $this->cellText($table->rows()[0]->cells()[0]));
+    }
+
+    public function test_a_cells_gridspan_reads_as_colspan(): void
+    {
+        $document = $this->readBody(
+            '<w:tbl><w:tr>'
+            .'<w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr>'.$this->paragraphXml('Merged').'</w:tc>'
+            .'</w:tr></w:tbl>',
+        );
+
+        $cell = $document->content()[0]->rows()[0]->cells()[0];
+        self::assertSame(2, $cell->colspan());
+        self::assertSame(1, $cell->rowspan());
+    }
+
+    public function test_a_cell_without_gridspan_has_colspan_1(): void
+    {
+        $document = $this->readBody(
+            '<w:tbl><w:tr><w:tc><w:tcPr/>'.$this->paragraphXml('Plain').'</w:tc></w:tr></w:tbl>',
+        );
+
+        self::assertSame(1, $document->content()[0]->rows()[0]->cells()[0]->colspan());
+    }
+
+    public function test_a_numbered_paragraph_inside_a_cell_resolves_its_numbering_ref(): void
+    {
+        $document = $this->readBody(
+            '<w:tbl><w:tr><w:tc><w:tcPr/>'
+            .'<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="5"/></w:numPr></w:pPr>'
+            .'<w:r><w:t>Item one</w:t></w:r></w:p>'
+            .'</w:tc></w:tr></w:tbl>',
+        );
+
+        $cellParagraph = $document->content()[0]->rows()[0]->cells()[0]->content()[0];
+        self::assertInstanceOf(Paragraph::class, $cellParagraph);
+        self::assertSame(5, $cellParagraph->numbering()?->numId());
+        self::assertSame(0, $cellParagraph->numbering()?->ilvl());
+    }
+
+    public function test_a_cell_with_multiple_paragraphs_reads_them_all(): void
+    {
+        $document = $this->readBody(
+            '<w:tbl><w:tr><w:tc><w:tcPr/>'
+            .$this->paragraphXml('First')
+            .$this->paragraphXml('Second')
+            .'</w:tc></w:tr></w:tbl>',
+        );
+
+        $content = $document->content()[0]->rows()[0]->cells()[0]->content();
+        self::assertCount(2, $content);
+        self::assertSame('First', $content[0]->inlines()[0]->content());
+        self::assertSame('Second', $content[1]->inlines()[0]->content());
+    }
+
+    public function test_a_nested_table_inside_a_cell_reads_correctly(): void
+    {
+        // #31 scoped nested tables as "out of scope unless trivially free
+        // from the recursive approach" - reusing the same body-children
+        // dispatcher for cell content makes it genuinely free, so this
+        // asserts real support rather than a documented skip.
+        $document = $this->readBody(
+            '<w:tbl><w:tr><w:tc><w:tcPr/>'
+            .$this->paragraphXml('Outer cell text')
+            .'<w:tbl><w:tr><w:tc><w:tcPr/>'.$this->paragraphXml('Nested').'</w:tc></w:tr></w:tbl>'
+            .'</w:tc></w:tr></w:tbl>',
+        );
+
+        $cellContent = $document->content()[0]->rows()[0]->cells()[0]->content();
+        self::assertCount(2, $cellContent);
+        self::assertSame('Outer cell text', $cellContent[0]->inlines()[0]->content());
+
+        $nestedTable = $cellContent[1];
+        self::assertInstanceOf(Table::class, $nestedTable);
+        self::assertSame(
+            'Nested',
+            $nestedTable->rows()[0]->cells()[0]->content()[0]->inlines()[0]->content(),
+        );
+    }
+
+    public function test_an_inline_drawing_resolves_to_an_inline_image_with_bytes_and_dimensions(): void
+    {
+        $document = (new DocxReader())->read($this->docxWithImage(
+            '<w:p><w:r>'.$this->drawingXml('rId4', 952500, 476250, 'A photo', 'Picture 1').'</w:r></w:p>',
+            ['rId4' => 'media/image1.png'],
+            ['word/media/image1.png' => 'fake-png-bytes'],
+        ));
+
+        $inlines = $document->content()[0]->inlines();
+        self::assertCount(1, $inlines);
+        $image = $inlines[0];
+        self::assertInstanceOf(InlineImage::class, $image);
+        self::assertSame('word/media/image1.png', $image->src());
+        self::assertSame('A photo', $image->alt());
+        self::assertSame('Picture 1', $image->title());
+        self::assertSame('fake-png-bytes', $image->data());
+        self::assertSame('image/png', $image->mimeType());
+        self::assertSame(100, $image->width());
+        self::assertSame(50, $image->height());
+    }
+
+    public function test_a_drawing_referencing_a_wmf_image_is_skipped_without_crashing(): void
+    {
+        $document = (new DocxReader())->read($this->docxWithImage(
+            '<w:p><w:r><w:t>Before </w:t></w:r><w:r>'
+            .$this->drawingXml('rId5', 952500, 476250)
+            .'</w:r><w:r><w:t> After</w:t></w:r></w:p>',
+            ['rId5' => 'media/image2.wmf'],
+            ['word/media/image2.wmf' => 'fake-wmf-bytes'],
+        ));
+
+        $inlines = $document->content()[0]->inlines();
+        self::assertContainsOnlyInstancesOf(Text::class, $inlines);
+        self::assertSame('Before  After', $this->paragraphText($document->content()[0]));
+    }
+
+    public function test_a_drawing_with_no_matching_relationship_is_skipped_without_crashing(): void
+    {
+        $document = (new DocxReader())->read($this->docxWithImage(
+            '<w:p><w:r>'.$this->drawingXml('rIdMissing', 952500, 476250).'</w:r></w:p>',
+            [],
+            [],
+        ));
+
+        self::assertSame([], $document->content()[0]->inlines());
+    }
+
+    /**
+     * @param array<string, string> $relationships rId => Target (relative to word/)
+     * @param array<string, string> $mediaParts    full package part path => raw bytes
+     */
+    private function docxWithImage(string $body, array $relationships, array $mediaParts): string
+    {
+        $relationshipXml = '';
+        foreach ($relationships as $id => $target) {
+            $relationshipXml .= sprintf(
+                '<Relationship Id="%s" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="%s"/>',
+                $id,
+                $target,
+            );
+        }
+
+        $relsXml = '<?xml version="1.0" encoding="UTF-8"?>'
+            .'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            .$relationshipXml
+            .'</Relationships>';
+
+        return $this->docx([
+            'word/document.xml' => $this->documentXml($body),
+            'word/_rels/document.xml.rels' => $relsXml,
+            ...$mediaParts,
+        ]);
+    }
+
+    private function drawingXml(string $relationshipId, int $cx, int $cy, string $alt = '', string $name = ''): string
+    {
+        return sprintf(
+            '<w:drawing>'
+            .'<wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">'
+            .'<wp:extent cx="%d" cy="%d"/>'
+            .'<wp:docPr id="1" name="%s" descr="%s"/>'
+            .'<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+            .'<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+            .'<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+            .'<pic:blipFill>'
+            .'<a:blip xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="%s"/>'
+            .'</pic:blipFill>'
+            .'</pic:pic>'
+            .'</a:graphicData>'
+            .'</a:graphic>'
+            .'</wp:inline>'
+            .'</w:drawing>',
+            $cx,
+            $cy,
+            htmlspecialchars($name, ENT_XML1),
+            htmlspecialchars($alt, ENT_XML1),
+            $relationshipId,
+        );
+    }
+
+    private function paragraphXml(string $text): string
+    {
+        return '<w:p><w:r><w:t>'.$text.'</w:t></w:r></w:p>';
+    }
+
+    private function cellText(TableCell $cell): string
+    {
+        return $cell->content()[0]->inlines()[0]->content();
     }
 
     /**
