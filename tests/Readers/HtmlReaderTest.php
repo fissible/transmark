@@ -275,4 +275,22 @@ final class HtmlReaderTest extends TestCase
         self::assertSame(2, $cell->colspan());
         self::assertSame(3, $cell->rowspan());
     }
+
+    public function test_clamps_malformed_colspan_and_rowspan_to_minimum_1(): void
+    {
+        $table = $this->read('<table><tr><td colspan="abc" rowspan="0">cell</td></tr></table>')->content()[0];
+        $cell = $table->rows()[0]->cells()[0];
+
+        self::assertSame(1, $cell->colspan());
+        self::assertSame(1, $cell->rowspan());
+    }
+
+    public function test_clamps_negative_colspan_and_rowspan_to_minimum_1(): void
+    {
+        $table = $this->read('<table><tr><td colspan="-5" rowspan="-2">cell</td></tr></table>')->content()[0];
+        $cell = $table->rows()[0]->cells()[0];
+
+        self::assertSame(1, $cell->colspan());
+        self::assertSame(1, $cell->rowspan());
+    }
 }

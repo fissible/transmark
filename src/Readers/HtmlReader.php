@@ -245,8 +245,8 @@ final class HtmlReader implements ReaderInterface
                 continue;
             }
 
-            $colspan = $child->hasAttribute('colspan') ? (int) $child->getAttribute('colspan') : 1;
-            $rowspan = $child->hasAttribute('rowspan') ? (int) $child->getAttribute('rowspan') : 1;
+            $colspan = $child->hasAttribute('colspan') ? max(1, (int) $child->getAttribute('colspan')) : 1;
+            $rowspan = $child->hasAttribute('rowspan') ? max(1, (int) $child->getAttribute('rowspan')) : 1;
 
             $cells[] = new TableCell(
                 [new Paragraph($this->mapInlineChildren($child))],
