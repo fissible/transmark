@@ -283,14 +283,14 @@ against the implemented HTML and OOXML conventions.
 | 4b | `HtmlWriter`: flat + literal-label strategy for "legal" `numId` runs | M | #1–#4, #9 (classification logic) | [#10](https://github.com/fissible/transmark/issues/10) | Done |
 | 5 | `MarkdownWriter`: tree → Markdown, reusing #9/#10's simple-vs-legal classification | M | #8 (node coverage); #1–#4 and #9/#10 (classification) for numbered-paragraph fallback | [#11](https://github.com/fissible/transmark/issues/11) | Done |
 | 6 | Semantic-idempotence test harness: hand-write ASTs, round-trip through each reader/writer pair, assert tree equality (with explicit "expected lossy" markers, e.g. legal outlines through Markdown) | M | #8, #11 (minimum, Markdown ⇄ Markdown); #27 for DOCX ⇄ DOCX | [#12](https://github.com/fissible/transmark/issues/12) | Done |
-| 7 | `fissible/transmark-blade` (separate package): Blade directive/component adapter over `HtmlWriter`, repo not yet created | M | #9, #10 (done) | [#13](https://github.com/fissible/transmark/issues/13) | Re-scoped — ready to pick up |
-| 8 | `fissible/transmark-xlsx` (separate package): XLSX reader/writer over `OoxmlPackage`, repo not yet created | XL | #5-#7 (done) | [#14](https://github.com/fissible/transmark/issues/14) | Re-scoped — ready to pick up |
+| 7 | `fissible/transmark-blade` (separate package): Blade directive/component adapter over `HtmlWriter` | M | #9, #10 (done) | [#13](https://github.com/fissible/transmark/issues/13) | Done — released, on Packagist |
+| 8 | `fissible/transmark-xlsx` (separate package): XLSX reader/writer over `OoxmlPackage` | XL | #5-#7 (done) | [#14](https://github.com/fissible/transmark/issues/14) | Done — released, on Packagist |
 | 9 | `DocxReader`: table support (`w:tbl` → `Table`/`TableRow`/`TableCell`) | M | #6, #7 | [#31](https://github.com/fissible/transmark/issues/31) | Done |
 | 10 | `DocxReader`: image pass-through (`w:drawing` media extraction, no image-processing deps; WMF/EMF explicitly out of scope) | M | #5, #6 | [#32](https://github.com/fissible/transmark/issues/32) | Done |
 | 11 | `HtmlWriter`: table support | S | `Table` node taxonomy (done); not blocked by #31 | [#33](https://github.com/fissible/transmark/issues/33) | Done |
 | 12 | `HtmlWriter`: image embedding (base64 data-URI, no image-processing deps) | S | `Image` node taxonomy (done); not blocked by #32 | [#34](https://github.com/fissible/transmark/issues/34) | Done — extended `Image`/`InlineImage` with `data`/`mimeType`/`width`/`height` fields (neither issue's text specified this node shape) |
 | 13 | `Ooxml` zip-backend evaluation: `ext-zip` vs pure-PHP `nelexa/zip` (spike/decision, not a migration) | S | none | [#35](https://github.com/fissible/transmark/issues/35) | Done — no-go, keep `ext-zip` (see design decision above) |
-| 14 | `fissible/transmark-pdf` (separate package): `PdfWriter` composing `HtmlWriter` output with `dompdf/dompdf`, mirroring #13/#14's satellite-package pattern | L | `HtmlWriter` (done) | [#39](https://github.com/fissible/transmark/issues/39) | Done — released [v0.1.0](https://github.com/fissible/transmark-pdf/releases/tag/v0.1.0) |
+| 14 | `fissible/transmark-pdf` (separate package): `PdfWriter` composing `HtmlWriter` output with `dompdf/dompdf`, mirroring #13/#14's satellite-package pattern | L | `HtmlWriter` (done) | [#39](https://github.com/fissible/transmark/issues/39) | Done — released [v0.2.0](https://github.com/fissible/transmark-pdf/releases/tag/v0.2.0) |
 | 15 | CLI wrapper (`bin/transmark convert`) for reader/writer conversions | S | at least one reader/writer pair (done) | [#37](https://github.com/fissible/transmark/issues/37) | Done |
 | 16 | Content-based format detection (DOCX zip+part signature) + extension as a non-authoritative secondary signal; typed mismatch exception when content and extension disagree (spoofing/rename detector) | S | none | [#42](https://github.com/fissible/transmark/issues/42) | Done |
 | 17 | `HtmlReader`: best-effort arbitrary-HTML → canonical tree, throws a dedicated parsing exception on unmappable/ambiguous markup rather than guessing | L | Node taxonomy (done) | [#43](https://github.com/fissible/transmark/issues/43) | Done — implemented via subagent-driven-development (10 tasks + final whole-branch review + 1 consolidated fix wave for 2 Critical/4 Important findings), all clean |
@@ -417,23 +417,21 @@ bug (see design decisions above) via a shared `Numbering\ParagraphWalker`.
 polish) landed and released as
 [transmark-pdf v0.2.0](https://github.com/fissible/transmark-pdf/releases/tag/v0.2.0).
 
-**Re-scoped (2026-08-09), #13/#14.** Both packages' stated blockers are
-done (#9/#10 for `transmark-blade`; #5-#7 for `transmark-xlsx`), so both
-issues were rewritten with concrete, dependency-ordered task breakdowns —
-see the issues themselves for the full plan. Neither repo exists yet.
-`transmark-blade` is a thin adapter (~S/M total: `ServiceProvider` + Blade
-directive/component wrapping `HtmlWriter::write()`, dispatching to
-`DocxReader`/`MarkdownReader` when given a file path). `transmark-xlsx` is
-substantially bigger (~L/XL total: needs its own `Workbook`/`Sheet`/`Cell`
-model — XLSX's grid doesn't map onto this project's `Document`/`Block`/
-`Inline` tree — plus a full read/write cycle including `[Content_Types].xml`/
-`_rels` manifest generation from scratch, the known risk area). Pick up
-`transmark-blade` (#13) first given the size difference; `transmark-xlsx`
-(#14) has no further blockers but is a bigger, separately-schedulable
-chunk of work.
+**Re-scoped and completed (2026-08-09), #13/#14.** Both packages' stated
+blockers were done (#9/#10 for `transmark-blade`; #5-#7 for
+`transmark-xlsx`), so both issues were rewritten with concrete,
+dependency-ordered task breakdowns, then built out. Both are now live,
+public repos and released on Packagist:
+[`fissible/transmark-blade`](https://github.com/fissible/transmark-blade)
+(Blade directive/component wrapping `HtmlWriter::write()`) and
+[`fissible/transmark-xlsx`](https://github.com/fissible/transmark-xlsx)
+(`Workbook`/`Sheet`/`Cell` reader/writer sharing `OoxmlPackage`). #13/#14
+closed.
 
-**Next task:** #13 (`transmark-blade`) — new repo scaffold, following
-`fissible/transmark-pdf`'s CI/release template.
+**Next task:** none currently scoped. All three satellite packages
+(`transmark-pdf`, `transmark-blade`, `transmark-xlsx`) are released; the
+core `transmark` backlog (#1-#37) is complete. Revisit this file when new
+work is identified.
 
 **Release decision:** v0.3.0 shipped (native DOCX output + cross-format
 semantic-idempotence contract). No release currently pending.
