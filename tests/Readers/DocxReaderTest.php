@@ -10,6 +10,9 @@ use Fissible\Transmark\Nodes\Block\BlockQuote;
 use Fissible\Transmark\Nodes\Block\Heading;
 use Fissible\Transmark\Nodes\Block\HorizontalRule;
 use Fissible\Transmark\Nodes\Block\Paragraph;
+use Fissible\Transmark\Nodes\Block\Table;
+use Fissible\Transmark\Nodes\Block\TableCell;
+use Fissible\Transmark\Nodes\Block\TableRow;
 use Fissible\Transmark\Nodes\Inline\Emphasis;
 use Fissible\Transmark\Nodes\Inline\LineBreak;
 use Fissible\Transmark\Nodes\Inline\Strike;
@@ -141,8 +144,7 @@ final class DocxReaderTest extends TestCase
     public function test_unrecognized_content_does_not_throw_and_supported_text_is_preserved(): void
     {
         $document = $this->readBody(
-            '<w:tbl><w:tr><w:tc><w:p><w:r><w:t>Skipped table</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
-            .'<w:p>'
+            '<w:p>'
             .'<w:empty/>'
             .'<w:custom><w:r><w:t>Flattened</w:t></w:r></w:custom>'
             .'<w:r><w:drawing/><w:t> text</w:t><w:unknown/></w:r>'
@@ -217,6 +219,167 @@ final class DocxReaderTest extends TestCase
         self::assertSame('strike', $this->wrappedText($paragraph->inlines()[1]));
         self::assertSame('super', $this->wrappedText($paragraph->inlines()[2]));
         self::assertSame('sub', $this->wrappedText($paragraph->inlines()[3]));
+    }
+
+    public function test_a_table_with_a_header_row_and_body_rows_reads_correctly(): void
+    {
+        $document = $this->readBody(
+            $this->paragraphXml('Before')
+            .'<w:tbl>'
+            .'<w:tr><w:trPr><w:tblHeader/></w:trPr>'
+            .'<w:tc><w:tcPr/>'.$this->paragraphXml('Name').'</w:tc>'
+            .'<w:tc><w:tcPr/>'.$this->paragraphXml('Age').'</w:tc>'
+            .'</w:tr>'
+            .'<w:tr>'
+            .'<w:tc><w:tcPr/>'.$this->paragraphXml('Alice').'</w:tc>'
+            .'<w:tc><w:tcPr/>'.$this->paragraphXml('30').'</w:tc>'
+            .'</w:tr>'
+            .'<w:tr>'
+            .'<w:tc><w:tcPr/>'.$this->paragraphXml('Bob').'</w:tc>'
+            .'<w:tc><w:tcPr/>'.$this->paragraphXml('25').'</w:tc>'
+            .'</w:tr>'
+            .'</w:tbl>'
+            .$this->paragraphXml('After'),
+        );
+
+        $content = $document->content();
+        self::assertCount(3, $content);
+        self::assertSame('Before', $content[0]->inlines()[0]->content());
+
+        $table = $content[1];
+        self::assertInstanceOf(Table::class, $table);
+
+        $header = $table->header();
+        self::assertInstanceOf(TableRow::class, $header);
+        self::assertSame('Name', $this->cellText($header->cells()[0]));
+        self::assertSame('Age', $this->cellText($header->cells()[1]));
+
+        $rows = $table->rows();
+        self::assertCount(2, $rows);
+        self::assertSame('Alice', $this->cellText($rows[0]->cells()[0]));
+        self::assertSame('30', $this->cellText($rows[0]->cells()[1]));
+        self::assertSame('Bob', $this->cellText($rows[1]->cells()[0]));
+        self::assertSame('25', $this->cellText($rows[1]->cells()[1]));
+
+        self::assertSame('After', $content[2]->inlines()[0]->content());
+    }
+
+    public function test_a_table_with_no_header_row_has_a_null_header(): void
+    {
+        $document = $this->readBody(
+            '<w:tbl>'
+            .'<w:tr><w:tc><w:tcPr/>'.$this->paragraphXml('A').'</w:tc></w:tr>'
+            .'<w:tr><w:tc><w:tcPr/>'.$this->paragraphXml('B').'</w:tc></w:tr>'
+            .'</w:tbl>',
+        );
+
+        $table = $document->content()[0];
+        self::assertInstanceOf(Table::class, $table);
+        self::assertNull($table->header());
+        self::assertCount(2, $table->rows());
+    }
+
+    public function test_only_the_first_tblheader_marked_row_becomes_the_table_header(): void
+    {
+        $document = $this->readBody(
+            '<w:tbl>'
+            .'<w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:tcPr/>'.$this->paragraphXml('H1').'</w:tc></w:tr>'
+            .'<w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:tcPr/>'.$this->paragraphXml('H2').'</w:tc></w:tr>'
+            .'</w:tbl>',
+        );
+
+        $table = $document->content()[0];
+        self::assertInstanceOf(Table::class, $table);
+        self::assertSame('H1', $this->cellText($table->header()->cells()[0]));
+        self::assertCount(1, $table->rows());
+        self::assertSame('H2', $this->cellText($table->rows()[0]->cells()[0]));
+    }
+
+    public function test_a_cells_gridspan_reads_as_colspan(): void
+    {
+        $document = $this->readBody(
+            '<w:tbl><w:tr>'
+            .'<w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr>'.$this->paragraphXml('Merged').'</w:tc>'
+            .'</w:tr></w:tbl>',
+        );
+
+        $cell = $document->content()[0]->rows()[0]->cells()[0];
+        self::assertSame(2, $cell->colspan());
+        self::assertSame(1, $cell->rowspan());
+    }
+
+    public function test_a_cell_without_gridspan_has_colspan_1(): void
+    {
+        $document = $this->readBody(
+            '<w:tbl><w:tr><w:tc><w:tcPr/>'.$this->paragraphXml('Plain').'</w:tc></w:tr></w:tbl>',
+        );
+
+        self::assertSame(1, $document->content()[0]->rows()[0]->cells()[0]->colspan());
+    }
+
+    public function test_a_numbered_paragraph_inside_a_cell_resolves_its_numbering_ref(): void
+    {
+        $document = $this->readBody(
+            '<w:tbl><w:tr><w:tc><w:tcPr/>'
+            .'<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="5"/></w:numPr></w:pPr>'
+            .'<w:r><w:t>Item one</w:t></w:r></w:p>'
+            .'</w:tc></w:tr></w:tbl>',
+        );
+
+        $cellParagraph = $document->content()[0]->rows()[0]->cells()[0]->content()[0];
+        self::assertInstanceOf(Paragraph::class, $cellParagraph);
+        self::assertSame(5, $cellParagraph->numbering()?->numId());
+        self::assertSame(0, $cellParagraph->numbering()?->ilvl());
+    }
+
+    public function test_a_cell_with_multiple_paragraphs_reads_them_all(): void
+    {
+        $document = $this->readBody(
+            '<w:tbl><w:tr><w:tc><w:tcPr/>'
+            .$this->paragraphXml('First')
+            .$this->paragraphXml('Second')
+            .'</w:tc></w:tr></w:tbl>',
+        );
+
+        $content = $document->content()[0]->rows()[0]->cells()[0]->content();
+        self::assertCount(2, $content);
+        self::assertSame('First', $content[0]->inlines()[0]->content());
+        self::assertSame('Second', $content[1]->inlines()[0]->content());
+    }
+
+    public function test_a_nested_table_inside_a_cell_reads_correctly(): void
+    {
+        // #31 scoped nested tables as "out of scope unless trivially free
+        // from the recursive approach" - reusing the same body-children
+        // dispatcher for cell content makes it genuinely free, so this
+        // asserts real support rather than a documented skip.
+        $document = $this->readBody(
+            '<w:tbl><w:tr><w:tc><w:tcPr/>'
+            .$this->paragraphXml('Outer cell text')
+            .'<w:tbl><w:tr><w:tc><w:tcPr/>'.$this->paragraphXml('Nested').'</w:tc></w:tr></w:tbl>'
+            .'</w:tc></w:tr></w:tbl>',
+        );
+
+        $cellContent = $document->content()[0]->rows()[0]->cells()[0]->content();
+        self::assertCount(2, $cellContent);
+        self::assertSame('Outer cell text', $cellContent[0]->inlines()[0]->content());
+
+        $nestedTable = $cellContent[1];
+        self::assertInstanceOf(Table::class, $nestedTable);
+        self::assertSame(
+            'Nested',
+            $nestedTable->rows()[0]->cells()[0]->content()[0]->inlines()[0]->content(),
+        );
+    }
+
+    private function paragraphXml(string $text): string
+    {
+        return '<w:p><w:r><w:t>'.$text.'</w:t></w:r></w:p>';
+    }
+
+    private function cellText(TableCell $cell): string
+    {
+        return $cell->content()[0]->inlines()[0]->content();
     }
 
     /**

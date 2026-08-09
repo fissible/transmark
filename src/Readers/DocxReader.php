@@ -12,6 +12,9 @@ use Fissible\Transmark\Nodes\Block\BlockQuote;
 use Fissible\Transmark\Nodes\Block\Heading;
 use Fissible\Transmark\Nodes\Block\HorizontalRule;
 use Fissible\Transmark\Nodes\Block\Paragraph;
+use Fissible\Transmark\Nodes\Block\Table;
+use Fissible\Transmark\Nodes\Block\TableCell;
+use Fissible\Transmark\Nodes\Block\TableRow;
 use Fissible\Transmark\Nodes\Inline\Emphasis;
 use Fissible\Transmark\Nodes\Inline\LineBreak;
 use Fissible\Transmark\Nodes\Inline\Strike;
@@ -85,21 +88,105 @@ final class DocxReader implements ReaderInterface
             return new Document(numbering: $numbering);
         }
 
+        return new Document($this->parseBodyChildren($body), $numbering);
+    }
+
+    /**
+     * @return BlockInterface[]
+     */
+    private function parseBodyChildren(\DOMElement $container): array
+    {
         $content = [];
 
-        foreach ($body->childNodes as $child) {
+        foreach ($container->childNodes as $child) {
+            if (!$child instanceof \DOMElement || $child->namespaceURI !== self::WORD_NAMESPACE) {
+                continue;
+            }
+
+            if ($child->localName === 'p') {
+                $content[] = $this->parseParagraph($child);
+            } elseif ($child->localName === 'tbl') {
+                $content[] = $this->parseTable($child);
+            }
+        }
+
+        return $content;
+    }
+
+    /**
+     * Only the first w:tblHeader-marked row becomes Table::header(); any
+     * further header-marked rows fall through to rows() rather than being
+     * dropped, mirroring HtmlReader's/PdfReader's "only the first heading
+     * row" convention elsewhere in this project.
+     */
+    private function parseTable(\DOMElement $tbl): Table
+    {
+        $header = null;
+        $rows = [];
+
+        foreach ($tbl->childNodes as $child) {
             if (
                 !$child instanceof \DOMElement
                 || $child->namespaceURI !== self::WORD_NAMESPACE
-                || $child->localName !== 'p'
+                || $child->localName !== 'tr'
             ) {
                 continue;
             }
 
-            $content[] = $this->parseParagraph($child);
+            $row = $this->parseTableRow($child);
+
+            if ($header === null && $this->isHeaderRow($child)) {
+                $header = $row;
+            } else {
+                $rows[] = $row;
+            }
         }
 
-        return new Document($content, $numbering);
+        return new Table($rows, $header);
+    }
+
+    private function isHeaderRow(\DOMElement $tr): bool
+    {
+        $properties = $this->directChild($tr, 'trPr');
+
+        return $this->directChild($properties, 'tblHeader') !== null;
+    }
+
+    private function parseTableRow(\DOMElement $tr): TableRow
+    {
+        $cells = [];
+
+        foreach ($tr->childNodes as $child) {
+            if (
+                !$child instanceof \DOMElement
+                || $child->namespaceURI !== self::WORD_NAMESPACE
+                || $child->localName !== 'tc'
+            ) {
+                continue;
+            }
+
+            $cells[] = $this->parseTableCell($child);
+        }
+
+        return new TableRow($cells);
+    }
+
+    /**
+     * Only w:gridSpan (horizontal merge) is reconstructed as colspan.
+     * w:vMerge (vertical merge) is not reconstructed as rowspan - DocxWriter
+     * itself already throws on rowspan !== 1 (it doesn't support writing
+     * vMerge either), so a continuation cell just reads as its own
+     * ordinary, usually-empty cell rather than being folded into the
+     * originating cell's rowspan. No content is lost; the merge itself
+     * doesn't round-trip.
+     */
+    private function parseTableCell(\DOMElement $tc): TableCell
+    {
+        $properties = $this->directChild($tc, 'tcPr');
+        $gridSpan = $this->attributeValue($this->directChild($properties, 'gridSpan'), 'val');
+        $colspan = $gridSpan === null ? 1 : max(1, (int) $gridSpan);
+
+        return new TableCell($this->parseBodyChildren($tc), $colspan);
     }
 
     private function parseNumbering(?\DOMDocument $numberingXml): NumberingDefinitions
