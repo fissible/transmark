@@ -34,6 +34,19 @@ use Fissible\Transmark\Readers\Exception\HtmlParseException;
 
 final class HtmlReader implements ReaderInterface
 {
+    private const STRIP_TAGS = ['script', 'style', 'head', 'meta', 'link', 'title', 'noscript'];
+
+    private const DENY_TAGS = [
+        'form', 'input', 'button', 'select', 'textarea', 'canvas', 'svg', 'iframe',
+        'video', 'audio', 'object', 'embed', 'map', 'area',
+    ];
+
+    private const INLINE_TAGS = [
+        'a', 'b', 'strong', 'i', 'em', 'u', 's', 'strike', 'del', 'sub', 'sup', 'code',
+        'span', 'br', 'img', 'small', 'mark', 'abbr', 'time', 'cite', 'q', 'kbd', 'samp',
+        'var', 'dfn',
+    ];
+
     public function read(string $content): Document
     {
         if (trim($content) === '') {
@@ -115,7 +128,30 @@ final class HtmlReader implements ReaderInterface
             default => null,
         };
 
-        return $block !== null ? [$block] : [];
+        if ($block !== null) {
+            return [$block];
+        }
+
+        if (in_array($tag, self::STRIP_TAGS, true)) {
+            return [];
+        }
+
+        if (in_array($tag, self::DENY_TAGS, true) || str_contains($tag, '-')) {
+            throw new HtmlParseException(sprintf(
+                'Cannot parse <%s>: no representable content model for this element.',
+                $tag,
+            ));
+        }
+
+        if (in_array($tag, self::INLINE_TAGS, true)) {
+            $inlines = $this->mapInlineChildren($node);
+
+            return $inlines === [] ? [] : [new Paragraph($inlines)];
+        }
+
+        // Unrecognized structural container (div/section/article/...): pass its
+        // content through transparently instead of inventing a node for it.
+        return $this->mapBlockChildren($node);
     }
 
     /**

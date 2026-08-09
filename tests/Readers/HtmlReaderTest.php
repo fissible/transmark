@@ -313,4 +313,87 @@ final class HtmlReaderTest extends TestCase
         self::assertInstanceOf(\Fissible\Transmark\Nodes\Inline\InlineImage::class, $inlines[1]);
         self::assertSame('icon.png', $inlines[1]->src());
     }
+
+    public function test_strips_script_and_style_without_throwing(): void
+    {
+        $document = $this->read(
+            '<html><head><style>p{color:red}</style></head>'
+            .'<body><script>alert(1)</script><p>Real content</p></body></html>',
+        );
+
+        $content = $document->content();
+        self::assertCount(1, $content);
+        self::assertSame('Real content', $content[0]->inlines()[0]->content());
+    }
+
+    public function test_strips_html_comments_without_throwing_or_mapping_to_the_comment_node(): void
+    {
+        $document = $this->read('<body><!-- a comment --><p>Real content</p></body>');
+
+        self::assertCount(1, $document->content());
+    }
+
+    public function test_unwraps_div_and_semantic_wrappers_transparently(): void
+    {
+        $document = $this->read(
+            '<body><div><section><article><p>Deeply wrapped</p></article></section></div></body>',
+        );
+
+        $content = $document->content();
+        self::assertCount(1, $content);
+        self::assertInstanceOf(\Fissible\Transmark\Nodes\Block\Paragraph::class, $content[0]);
+        self::assertSame('Deeply wrapped', $content[0]->inlines()[0]->content());
+    }
+
+    public function test_unwrapping_a_container_can_contribute_multiple_sibling_blocks(): void
+    {
+        $document = $this->read('<div><p>One</p><p>Two</p></div>');
+
+        self::assertCount(2, $document->content());
+    }
+
+    public function test_unknown_inline_level_tag_in_block_position_flattens_to_a_paragraph(): void
+    {
+        $document = $this->read('<body><mark>highlighted text</mark></body>');
+
+        $content = $document->content();
+        self::assertCount(1, $content);
+        self::assertInstanceOf(\Fissible\Transmark\Nodes\Block\Paragraph::class, $content[0]);
+        self::assertSame('highlighted text', $content[0]->inlines()[0]->content());
+    }
+
+    /**
+     * @return string[]
+     */
+    public static function unmappableContentProvider(): array
+    {
+        return [
+            'form' => ['<form><input type="text"></form>'],
+            'canvas' => ['<canvas width="10" height="10"></canvas>'],
+            'svg' => ['<svg><circle r="5"/></svg>'],
+            'iframe' => ['<iframe src="https://example.com"></iframe>'],
+            'video' => ['<video src="movie.mp4"></video>'],
+            'custom element' => ['<my-widget>content</my-widget>'],
+        ];
+    }
+
+    /**
+     * @dataProvider unmappableContentProvider
+     */
+    public function test_throws_on_unmappable_content_elements(string $html): void
+    {
+        $this->expectException(HtmlParseException::class);
+
+        $this->read($html);
+    }
+
+    public function test_exception_message_names_the_offending_tag(): void
+    {
+        try {
+            $this->read('<form></form><p>fallback so body is not otherwise empty</p>');
+            self::fail('Expected HtmlParseException was not thrown.');
+        } catch (HtmlParseException $exception) {
+            self::assertStringContainsString('form', $exception->getMessage());
+        }
+    }
 }
