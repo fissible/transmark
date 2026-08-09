@@ -33,6 +33,41 @@ final class HtmlReaderTest extends TestCase
         self::assertSame('Hello world', $inlines[0]->content());
     }
 
+    public function test_pretty_printed_paragraph_content_is_edge_trimmed(): void
+    {
+        $document = $this->read("<body><p>\n  Hello\n</p></body>");
+
+        $inlines = $document->content()[0]->inlines();
+        self::assertCount(1, $inlines);
+        self::assertSame('Hello', $inlines[0]->content());
+    }
+
+    public function test_pretty_printed_heading_content_is_edge_trimmed(): void
+    {
+        $document = $this->read("<body><h1>\n  Title\n</h1></body>");
+
+        $heading = $document->content()[0];
+        self::assertSame('Title', $heading->inlines()[0]->content());
+    }
+
+    public function test_interior_spacing_inside_a_paragraph_survives_edge_trimming(): void
+    {
+        $document = $this->read('<p>text <span>x</span> after</p>');
+
+        $inlines = $document->content()[0]->inlines();
+        self::assertCount(3, $inlines);
+        self::assertSame('text ', $inlines[0]->content());
+        self::assertSame('x', $inlines[1]->content());
+        self::assertSame(' after', $inlines[2]->content());
+    }
+
+    public function test_whitespace_only_paragraph_content_trims_to_empty_inlines(): void
+    {
+        $document = $this->read('<body><p>   </p></body>');
+
+        self::assertSame([], $document->content()[0]->inlines());
+    }
+
     public function test_reads_multiple_paragraphs_in_order(): void
     {
         $document = $this->read('<body><p>First</p><p>Second</p></body>');
@@ -568,6 +603,37 @@ final class HtmlReaderTest extends TestCase
         self::assertSame('Quoted ', $inlines[0]->content());
         self::assertInstanceOf(\Fissible\Transmark\Nodes\Inline\Emphasis::class, $inlines[1]);
         self::assertSame(' here', $inlines[2]->content());
+    }
+
+    public function test_legacy_and_lesser_known_phrasing_tags_join_the_surrounding_run(): void
+    {
+        $content = $this->read('<div>a <ins>b</ins> c</div>')->content();
+
+        self::assertCount(1, $content);
+        $inlines = $content[0]->inlines();
+        self::assertCount(3, $inlines);
+        self::assertSame('a ', $inlines[0]->content());
+        self::assertSame('b', $inlines[1]->content());
+        self::assertSame(' c', $inlines[2]->content());
+    }
+
+    public function test_font_tag_joins_the_surrounding_run(): void
+    {
+        $content = $this->read('<div>Hello <font color="red">world</font>!</div>')->content();
+
+        self::assertCount(1, $content);
+        $inlines = $content[0]->inlines();
+        self::assertCount(3, $inlines);
+        self::assertSame('Hello ', $inlines[0]->content());
+        self::assertSame('world', $inlines[1]->content());
+        self::assertSame('!', $inlines[2]->content());
+    }
+
+    public function test_label_tag_joins_the_surrounding_run(): void
+    {
+        $content = $this->read('<li>x <label>Name</label> y</li>')->content();
+
+        self::assertCount(1, $content);
     }
 
     public function test_whitespace_between_two_inline_siblings_is_preserved_inside_the_run(): void

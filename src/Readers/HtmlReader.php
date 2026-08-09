@@ -43,20 +43,25 @@ use Fissible\Transmark\Readers\Exception\HtmlParseException;
  *   (`script`, `style`, `head`, `meta`, `link`, `title`, `noscript`) and HTML
  *   comments. No node is emitted and no error is raised.
  * - **Unwrap transparently:** any other unrecognized element (`div`,
- *   `section`, `ins`, `font`, ...). No node is emitted for the container
- *   itself, but its children are walked and spliced into the parent's
- *   content, so nothing is lost.
+ *   `section`, `article`, ...). No node is emitted for the container itself,
+ *   but its children are walked and spliced into the parent's content, so
+ *   nothing is lost.
  * - **Throw `HtmlParseException`:** genuinely unmappable content — forms,
  *   embeds and media (`form`, `button`, `iframe`, `svg`, `video`, ...) and any
  *   custom element (a tag name containing a hyphen). These have no
  *   representable target in the node taxonomy, so failing loudly lets the
  *   caller find and replace them instead of losing their content.
  *
- * Consecutive inline-level siblings of a block container coalesce into a
- * single `Paragraph`, so `<li>text with <a href="...">a link</a></li>` reads
- * as one paragraph rather than a fragmented sequence. `NumberingRef` is never
- * emitted: visually numbered HTML is read as plain `Paragraph`/`ListNode`
- * content.
+ * Consecutive inline-level siblings of a block container (bare text, and any
+ * tag in the closed `INLINE_TAGS` phrasing-content list — `a`, `strong`,
+ * `ins`, `font`, ...) coalesce into a single `Paragraph`, so
+ * `<li>text with <a href="...">a link</a></li>` reads as one paragraph
+ * rather than a fragmented sequence. A `<p>`/heading's own content is
+ * edge-trimmed the same way, so pretty-printed markup like
+ * `<p>\n  Hello\n</p>` reads as `'Hello'`, not `"\n  Hello\n"` — interior
+ * spacing between inline siblings is untouched either way. `NumberingRef` is
+ * never emitted: visually numbered HTML is read as plain
+ * `Paragraph`/`ListNode` content.
  */
 final class HtmlReader implements ReaderInterface
 {
@@ -70,13 +75,17 @@ final class HtmlReader implements ReaderInterface
     /**
      * Tags treated as inline-level when they appear as a direct child of a
      * block container, so that a run of them coalesces into one Paragraph.
-     * `img` is deliberately excluded: at block position it maps to the block
-     * `Image` node, not to `InlineImage`.
+     * This is the closed set of standard (and common legacy/obsolete)
+     * HTML phrasing-content elements; anything outside it is treated as an
+     * unrecognized structural container instead. `img` is deliberately
+     * excluded: at block position it maps to the block `Image` node, not to
+     * `InlineImage`, so joining it to a run would change that mapping.
      */
     private const INLINE_TAGS = [
         'a', 'b', 'strong', 'i', 'em', 'u', 's', 'strike', 'del', 'sub', 'sup', 'code',
         'span', 'br', 'small', 'mark', 'abbr', 'time', 'cite', 'q', 'kbd', 'samp',
-        'var', 'dfn',
+        'var', 'dfn', 'ins', 'font', 'tt', 'big', 'bdi', 'bdo', 'data', 'label',
+        'output', 'ruby', 'nobr', 'wbr',
     ];
 
     /**
@@ -281,7 +290,7 @@ final class HtmlReader implements ReaderInterface
         $tag = strtolower($node->localName);
 
         if (preg_match('/^h([1-6])$/', $tag, $matches) === 1) {
-            return [new Heading((int) $matches[1], $this->mapInlineChildren($node))];
+            return [new Heading((int) $matches[1], $this->trimInlineEdges($this->mapInlineChildren($node)))];
         }
 
         // A table can contribute a caption Paragraph alongside the Table node,
@@ -291,7 +300,7 @@ final class HtmlReader implements ReaderInterface
         }
 
         $block = match ($tag) {
-            'p' => new Paragraph($this->mapInlineChildren($node)),
+            'p' => new Paragraph($this->trimInlineEdges($this->mapInlineChildren($node))),
             'ul' => $this->mapList($node, ListNode::TYPE_UNORDERED),
             'ol' => $this->mapList($node, ListNode::TYPE_ORDERED),
             'blockquote' => new BlockQuote($this->mapBlockChildren($node)),
