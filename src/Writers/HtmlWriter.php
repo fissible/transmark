@@ -12,9 +12,13 @@ use Fissible\Transmark\Nodes\Block\BlockQuote;
 use Fissible\Transmark\Nodes\Block\CodeBlock;
 use Fissible\Transmark\Nodes\Block\Heading;
 use Fissible\Transmark\Nodes\Block\HorizontalRule;
+use Fissible\Transmark\Nodes\Block\Image;
 use Fissible\Transmark\Nodes\Block\ListItem;
 use Fissible\Transmark\Nodes\Block\ListNode;
 use Fissible\Transmark\Nodes\Block\Paragraph;
+use Fissible\Transmark\Nodes\Block\Table;
+use Fissible\Transmark\Nodes\Block\TableCell;
+use Fissible\Transmark\Nodes\Block\TableRow;
 use Fissible\Transmark\Nodes\Inline\Code;
 use Fissible\Transmark\Nodes\Inline\Emphasis;
 use Fissible\Transmark\Nodes\Inline\InlineImage;
@@ -131,7 +135,89 @@ final class HtmlWriter implements WriterInterface
             return '<pre><code'.$class.'>'.$this->escape($block->content()).'</code></pre>';
         }
 
+        if ($block instanceof Table) {
+            return $this->renderTable($block, $document, $simpleNumIds, $labels);
+        }
+
+        if ($block instanceof Image) {
+            return $this->renderImageTag(
+                $block->data(),
+                $block->mimeType(),
+                $block->src(),
+                $block->alt(),
+                $block->title(),
+                $block->width(),
+                $block->height(),
+            );
+        }
+
         throw UnsupportedHtmlNodeException::at($block);
+    }
+
+    /**
+     * @param array<int, bool> $simpleNumIds
+     */
+    private function renderTable(
+        Table $table,
+        Document $document,
+        array $simpleNumIds,
+        NumberingLabelMap $labels,
+    ): string {
+        $html = '<table>';
+
+        $header = $table->header();
+        if ($header !== null) {
+            $html .= '<thead>'.$this->renderTableRow($header, 'th', $document, $simpleNumIds, $labels).'</thead>';
+        }
+
+        $html .= '<tbody>';
+        foreach ($table->rows() as $row) {
+            $html .= $this->renderTableRow($row, 'td', $document, $simpleNumIds, $labels);
+        }
+        $html .= '</tbody>';
+
+        return $html.'</table>';
+    }
+
+    /**
+     * @param array<int, bool> $simpleNumIds
+     */
+    private function renderTableRow(
+        TableRow $row,
+        string $cellTag,
+        Document $document,
+        array $simpleNumIds,
+        NumberingLabelMap $labels,
+    ): string {
+        $html = '<tr>';
+        foreach ($row->cells() as $cell) {
+            $html .= $this->renderTableCell($cell, $cellTag, $document, $simpleNumIds, $labels);
+        }
+
+        return $html.'</tr>';
+    }
+
+    /**
+     * @param array<int, bool> $simpleNumIds
+     */
+    private function renderTableCell(
+        TableCell $cell,
+        string $tag,
+        Document $document,
+        array $simpleNumIds,
+        NumberingLabelMap $labels,
+    ): string {
+        $span = '';
+        if ($cell->colspan() !== 1) {
+            $span .= ' colspan="'.$cell->colspan().'"';
+        }
+        if ($cell->rowspan() !== 1) {
+            $span .= ' rowspan="'.$cell->rowspan().'"';
+        }
+
+        $content = $this->renderBlocks($cell->content(), $document, $simpleNumIds, $labels);
+
+        return sprintf('<%1$s%2$s>%3$s</%1$s>', $tag, $span, $content);
     }
 
     /**
@@ -371,11 +457,51 @@ final class HtmlWriter implements WriterInterface
 
     private function renderInlineImage(InlineImage $image): string
     {
-        $title = $image->title() === null
-            ? ''
-            : ' title="'.$this->escape($image->title()).'"';
+        return $this->renderImageTag(
+            $image->data(),
+            $image->mimeType(),
+            $image->src(),
+            $image->alt(),
+            $image->title(),
+            $image->width(),
+            $image->height(),
+        );
+    }
 
-        return '<img src="'.$this->escape($image->src()).'" alt="'.$this->escape($image->alt()).'"'.$title.'>';
+    /**
+     * Shared by the block Image and inline InlineImage nodes: embeds `$data`
+     * as a base64 data URI when present (an embedded image, e.g. from
+     * DOCX, which has no natural `src` of its own), falling back to `$src`
+     * as a plain reference otherwise (e.g. an HTML-sourced <img src="...">).
+     */
+    private function renderImageTag(
+        ?string $data,
+        ?string $mimeType,
+        string $src,
+        string $alt,
+        ?string $title,
+        ?int $width,
+        ?int $height,
+    ): string {
+        $resolvedSrc = $data !== null && $mimeType !== null
+            ? 'data:'.$mimeType.';base64,'.base64_encode($data)
+            : $src;
+
+        $html = '<img src="'.$this->escape($resolvedSrc).'" alt="'.$this->escape($alt).'"';
+
+        if ($title !== null) {
+            $html .= ' title="'.$this->escape($title).'"';
+        }
+
+        if ($width !== null) {
+            $html .= ' width="'.$width.'"';
+        }
+
+        if ($height !== null) {
+            $html .= ' height="'.$height.'"';
+        }
+
+        return $html.'>';
     }
 
     private function renderLink(Link $link): string

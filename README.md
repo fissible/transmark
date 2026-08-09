@@ -57,7 +57,22 @@ Simple lists render as native nested `<ol>`/`<ul>` elements. Legal-outline
 numbering renders as flat paragraphs because HTML cannot express labels that
 concatenate counters across levels. Those paragraphs use
 `class="numbered-paragraph legal-level-N"`, where `N` is the zero-based OOXML
-numbering level, so consumers can style each indentation depth.
+numbering level, so consumers can style each indentation depth. A numbered
+paragraph nested inside a table cell resolves its label exactly as it would
+outside one — the same shared counter, the same simple-vs-legal rendering
+choice.
+
+`Table` renders as semantic `<table>`/`<thead>`/`<tbody>`/`<tr>`/`<th>`/`<td>`
+— a `header()` row becomes `<thead>` with `<th>` cells (omitted entirely when
+there is no header), `rows()` become `<tbody>` with `<td>` cells, and cell
+content renders through the same block/inline pipeline as everything else
+(including numbered paragraphs and nested lists).
+
+`Image`/`InlineImage` render as `<img>`. An embedded image (one carrying raw
+bytes — e.g. from a future DOCX image reader) is base64-encoded into a
+self-contained `data:{mime};base64,...` URI; an image with only a `src`
+reference (e.g. from HTML input) renders that reference directly. Declared
+`width`/`height` become attributes when present.
 
 ## Reading HTML
 
