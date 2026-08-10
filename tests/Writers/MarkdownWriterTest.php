@@ -124,6 +124,52 @@ final class MarkdownWriterTest extends TestCase
         self::assertSame('1. Parent', $roundTripped->content()[0]->inlines()[0]->content());
     }
 
+    public function test_a_simple_bullet_numid_starting_below_ilvl_zero_still_renders_a_real_list(): void
+    {
+        // Found via a real LibreOffice-authored DOCX: a bullet sub-list
+        // (numId 30) sandwiched between a legal-classified outline's items
+        // (numId 20), with no ilvl-0 paragraph of its own for numId 30 -
+        // its true "parent" is a legal paragraph rendered as literal text,
+        // not real list syntax. Before the fix, this rendered as
+        // `str_repeat(' ', $ilvl * 4)` = 4 leading spaces with no
+        // preceding list item to nest under, which a real CommonMark
+        // parser reads as an indented CODE BLOCK, not a list - the bullets
+        // vanished from the rendered document entirely.
+        $document = new Document(
+            content: [
+                $this->numberedParagraph('Green', 20, 0),
+                $this->numberedParagraph('Dark green', 30, 1),
+                $this->numberedParagraph('Light green', 30, 1),
+                $this->numberedParagraph('Red', 20, 0),
+                $this->numberedParagraph('Super Red', 20, 1),
+            ],
+            numbering: new NumberingDefinitions(
+                abstractNums: [
+                    2 => new AbstractNum(2, [
+                        0 => new Level(0, NumberFormat::Decimal, '%1.'),
+                        1 => new Level(1, NumberFormat::Decimal, '%1.%2.'),
+                    ]),
+                    3 => new AbstractNum(3, [
+                        1 => new Level(1, NumberFormat::Bullet, '-'),
+                    ]),
+                ],
+                nums: [20 => new Num(20, 2), 30 => new Num(30, 3)],
+            ),
+        );
+
+        $markdown = (new MarkdownWriter())->write($document);
+
+        self::assertSame(
+            "1\\. Green\n\n- Dark green\n- Light green\n\n2\\. Red\n\n  2\\.1\\. Super Red\n",
+            $markdown,
+        );
+
+        $html = (new \League\CommonMark\CommonMarkConverter())->convert($markdown)->getContent();
+        self::assertStringContainsString('<ul>', $html);
+        self::assertStringContainsString('<li>Dark green</li>', $html);
+        self::assertStringNotContainsString('<pre>', $html);
+    }
+
     public function test_literal_markdown_characters_in_text_are_escaped(): void
     {
         $document = new Document([$this->paragraph('*literal* _text_ [not a link]')]);

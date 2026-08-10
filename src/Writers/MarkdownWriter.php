@@ -161,6 +161,7 @@ final class MarkdownWriter implements WriterInterface
     {
         $lines = [];
         $counters = [];
+        $baseIlvl = [];
         $previousNumId = null;
         $previousIlvl = null;
 
@@ -178,6 +179,15 @@ final class MarkdownWriter implements WriterInterface
                 $lines[] = '';
             }
 
+            // A numId's first-seen ilvl in this run becomes its indent root,
+            // not necessarily 0 - a "simple" list can start at ilvl > 0 (e.g.
+            // its true parent belongs to a different, "legal"-classified
+            // numId rendered as plain text elsewhere). Without this,
+            // CommonMark sees indentation with no enclosing list item and
+            // reads it as an indented code block instead of a nested list.
+            $baseIlvl[$numId] ??= $ilvl;
+            $relativeIlvl = max(0, $ilvl - $baseIlvl[$numId]);
+
             if ($level?->format() === NumberFormat::Bullet) {
                 $marker = '-';
             } else {
@@ -194,7 +204,7 @@ final class MarkdownWriter implements WriterInterface
                 }
             }
 
-            $lines[] = str_repeat(' ', $ilvl * 4)
+            $lines[] = str_repeat(' ', $relativeIlvl * 4)
                 .$marker.' '
                 .$this->renderInlines($paragraph->inlines());
             $previousNumId = $numId;
