@@ -174,6 +174,44 @@ final class MarkdownRoundTripTest extends TestCase
         );
     }
 
+    public function test_legal_outline_beyond_two_levels_stays_a_paragraph_through_markdown(): void
+    {
+        // Four or more leading spaces parse as an indented code block, so
+        // per-level indentation must not scale with ilvl.
+        $document = new Document(
+            content: [
+                $this->numberedParagraph('Top', 20, 0),
+                $this->numberedParagraph('Mid', 20, 1),
+                $this->numberedParagraph('Deep', 20, 2),
+            ],
+            numbering: new NumberingDefinitions(
+                abstractNums: [2 => new AbstractNum(2, [
+                    0 => new Level(0, NumberFormat::Decimal, '%1.'),
+                    1 => new Level(1, NumberFormat::LowerLetter, '%1.%2'),
+                    2 => new Level(2, NumberFormat::LowerRoman, '%1.%2.%3'),
+                ])],
+                nums: [20 => new Num(20, 2)],
+            ),
+        );
+
+        $roundTripped = $this->roundTrip($document);
+
+        TreeEquivalence::assertExpectedLoss(
+            $document,
+            $roundTripped,
+            'Legal labels become literal text because Markdown has no cross-level counter model.',
+            function (Document $actual): void {
+                self::assertSame(
+                    ['1. Top', '1.a Mid', '1.a.i Deep'],
+                    $this->paragraphTexts($actual),
+                );
+                foreach ($actual->content() as $block) {
+                    self::assertInstanceOf(Paragraph::class, $block);
+                }
+            },
+        );
+    }
+
     public function test_raw_html_inline_fallbacks_are_documented_as_lossy_through_markdown(): void
     {
         $document = new Document([new Paragraph([

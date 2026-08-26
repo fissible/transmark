@@ -189,7 +189,9 @@ $markdown = (new MarkdownWriter())->write($document);
 
 Structural lists serialize as native Markdown lists. Word legal outlines have
 no native Markdown equivalent, so `MarkdownWriter` emits their computed labels
-as literal text. Underline, superscript, and subscript use raw inline HTML.
+as literal text, flat and unindented (indentation by depth would cross the
+four-space indented-code-block threshold at deeper levels; the label itself —
+`1.a.i` — carries the structure). Underline, superscript, and subscript use raw inline HTML.
 Those conversions are deliberately lossy: reading the Markdown back preserves
 the visible text, but cannot reconstruct the original OOXML numbering or
 formatting metadata.

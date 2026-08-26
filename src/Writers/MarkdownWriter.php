@@ -146,9 +146,9 @@ final class MarkdownWriter implements WriterInterface
         ) {
             $prefix = $label === '' ? '' : $this->escapeLegalLabel($label).' ';
 
-            return str_repeat('  ', $numbering->ilvl())
-                .$prefix
-                .$this->renderInlines($paragraph->inlines());
+            // No per-level indentation: four or more leading spaces parse as
+            // an indented code block, so the label alone carries the depth.
+            return $prefix.$this->renderInlines($paragraph->inlines());
         }
 
         return $this->renderInlines($paragraph->inlines());
