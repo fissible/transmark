@@ -300,6 +300,36 @@ against the implemented HTML and OOXML conventions.
 | 21 | `HtmlReader`: block-position inline-run coalescing limited to the static `INLINE_TAGS` list (`<div>a <ins>b</ins> c</div>` fragments into 3 paragraphs instead of 1; no content lost) | S | #43 (done) | [#49](https://github.com/fissible/transmark/issues/49) | Done — expanded `INLINE_TAGS` to the closed HTML5 phrasing-content set; `img` at block position intentionally left as-is (separate design tradeoff, not a bug) |
 | 22 | `HtmlReader`: `<p>`/heading content not edge-trimmed, leaks literal newlines from pretty-printed HTML (`<p>\n  Hello\n</p>`) into downstream writer output | XS-S | #43 (done) | [#50](https://github.com/fissible/transmark/issues/50) | Done |
 
+**Completed (2026-08-26, deep-dive audit + fix wave):** Full source review
+with runtime probes against real behavior (10 repro scripts). Findings filed
+as #62–#71; two (#62 HtmlWriter block drops, #66 classifier container scan)
+were already fixed on main and closed as stale — the review had been run
+against an outdated working tree. Eight fixes opened as PRs, each with
+failing-test-first coverage:
+
+- #72/#64: unsupported `w:numFmt` values degrade to decimal instead of a
+  `ValueError` aborting the read
+- #73/#65: omitted `w:ilvl` in `numPr` defaults to level 0 (ECMA-376 §17.9.22)
+- #74/#67: hyperlinks survive DOCX reads (r:id rels + w:anchor); links now
+  round-trip DOCX losslessly, replacing the old documented-loss test
+- #75/#68: link/image URI scheme allowlisting in `HtmlWriter` (XSS hardening)
+- #76/#70: legal outlines emit flat in Markdown (per-level indentation hit
+  the 4-space indented-code-block threshold at ilvl ≥ 2)
+- #77/#71: soft line breaks map to a space, not `<br>`
+- #78/#69: simple-list counters continue across non-list interruptions via a
+  new shared `NumberingLabelMap::counterFor()`; MarkdownWriter's duplicated
+  counter arithmetic deleted in favor of engine state
+- #79/#63: rPr children emitted in CT_RPr schema order; relationship dedup
+
+Suite grew 373→382+ tests across the branches; every PR green + cs clean.
+
+**Next task:** merge the eight open PRs (#72–#79) — they are independent of
+each other but all branch from v0.4.1, so merge order doesn't matter except
+that later branches don't include earlier ones' tests. After merging,
+#31/#32-style roadmap work resumes; also consider the test-corpus gap noted
+in the audit (no real-world Word files exercising ordinals/hyperlinks/
+omitted-ilvl end to end).
+
 ## Session handoff notes
 
 **Completed (2026-08-04):** Package skeleton — `composer.json` (PSR-4
