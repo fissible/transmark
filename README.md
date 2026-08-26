@@ -53,6 +53,14 @@ count as a passing lossy conversion.
 
 ## HTML output conventions
 
+Link hrefs and image sources are scheme-allowlisted so untrusted documents
+cannot smuggle script URIs into generated HTML: only `http`, `https`, and
+`mailto` links render as anchors (anything else renders its link text
+without the `<a>` wrapper), and images accept `http`, `https`, relative
+paths, and embedded `data:image/` URIs. Scheme checks ignore control
+characters and whitespace the way browsers do when resolving a URI, so
+obfuscations like `java\tscript:` cannot slip through.
+
 Simple lists render as native nested `<ol>`/`<ul>` elements. Legal-outline
 numbering renders as flat paragraphs because HTML cannot express labels that
 concatenate counters across levels. Those paragraphs use
@@ -135,8 +143,12 @@ $html = (new HtmlWriter())->write($document);
 ```
 
 `DocxReader` currently covers paragraphs, headings, core inline formatting,
-and Word numbering definitions. See the pre-alpha status above and roadmap for
-unsupported document features.
+hyperlinks (external relationship targets and internal bookmark anchors),
+and Word numbering definitions. Numbering formats outside the supported set
+(`decimal`, `lowerLetter`/`upperLetter`, `lowerRoman`/`upperRoman`, `bullet`,
+`none`) — e.g. `ordinal` or `chicago` — degrade to decimal rendering of the
+level's literal text rather than aborting the read. See the pre-alpha status
+above and roadmap for unsupported document features.
 
 ## Writing DOCX
 
@@ -177,7 +189,9 @@ $markdown = (new MarkdownWriter())->write($document);
 
 Structural lists serialize as native Markdown lists. Word legal outlines have
 no native Markdown equivalent, so `MarkdownWriter` emits their computed labels
-as literal text. Underline, superscript, and subscript use raw inline HTML.
+as literal text, flat and unindented (indentation by depth would cross the
+four-space indented-code-block threshold at deeper levels; the label itself —
+`1.a.i` — carries the structure). Underline, superscript, and subscript use raw inline HTML.
 Those conversions are deliberately lossy: reading the Markdown back preserves
 the visible text, but cannot reconstruct the original OOXML numbering or
 formatting metadata.

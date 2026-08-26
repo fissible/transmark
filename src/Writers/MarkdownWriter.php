@@ -82,7 +82,7 @@ final class MarkdownWriter implements WriterInterface
                     ++$index;
                 }
 
-                $rendered[] = $this->renderSimpleNumberedParagraphs($paragraphs, $document);
+                $rendered[] = $this->renderSimpleNumberedParagraphs($paragraphs, $document, $labels);
                 --$index;
 
                 continue;
@@ -146,9 +146,9 @@ final class MarkdownWriter implements WriterInterface
         ) {
             $prefix = $label === '' ? '' : $this->escapeLegalLabel($label).' ';
 
-            return str_repeat('  ', $numbering->ilvl())
-                .$prefix
-                .$this->renderInlines($paragraph->inlines());
+            // No per-level indentation: four or more leading spaces parse as
+            // an indented code block, so the label alone carries the depth.
+            return $prefix.$this->renderInlines($paragraph->inlines());
         }
 
         return $this->renderInlines($paragraph->inlines());
@@ -157,10 +157,12 @@ final class MarkdownWriter implements WriterInterface
     /**
      * @param Paragraph[] $paragraphs
      */
-    private function renderSimpleNumberedParagraphs(array $paragraphs, Document $document): string
-    {
+    private function renderSimpleNumberedParagraphs(
+        array $paragraphs,
+        Document $document,
+        NumberingLabelMap $labels,
+    ): string {
         $lines = [];
-        $counters = [];
         $baseIlvl = [];
         $previousNumId = null;
         $previousIlvl = null;
@@ -191,17 +193,11 @@ final class MarkdownWriter implements WriterInterface
             if ($level?->format() === NumberFormat::Bullet) {
                 $marker = '-';
             } else {
-                $num = $document->numbering()->num($numId);
-                $levelOverrides = $num?->levelOverrides() ?? [];
-                $start = $levelOverrides[$ilvl] ?? $level?->start() ?? 1;
-                $counters[$numId][$ilvl] = ($counters[$numId][$ilvl] ?? $start - 1) + 1;
-                $marker = $counters[$numId][$ilvl].'.';
-            }
-
-            foreach (array_keys($counters[$numId] ?? []) as $deeperIlvl) {
-                if ($deeperIlvl > $ilvl) {
-                    unset($counters[$numId][$deeperIlvl]);
-                }
+                // Literal markers come from the shared engine counters, so a
+                // run interrupted by non-list content continues Word's count
+                // instead of restarting at 1.
+                $counter = $labels->counterFor($paragraph) ?? 1;
+                $marker = $counter.'.';
             }
 
             $lines[] = str_repeat(' ', $relativeIlvl * 4)
@@ -431,6 +427,11 @@ final class MarkdownWriter implements WriterInterface
 
     private function renderLink(Link $link): string
     {
+        if (!$this->isSafeLinkHref($link->href())) {
+            // Unsafe scheme: render link text without the anchor
+            return $this->renderInlines($link->children());
+        }
+
         $title = $link->title() === null ? '' : ' "'.$this->escapeTitle($link->title()).'"';
 
         return '['.$this->renderInlines($link->children()).']('
@@ -439,10 +440,47 @@ final class MarkdownWriter implements WriterInterface
 
     private function renderInlineImage(InlineImage $image): string
     {
+        if (!$this->isSafeImageSrc($image->src())) {
+            // Unsafe scheme: render alt text
+            return $this->escapeText($image->alt());
+        }
+
         $title = $image->title() === null ? '' : ' "'.$this->escapeTitle($image->title()).'"';
 
         return '!['.$this->escapeText($image->alt()).']('
             .$this->escapeDestination($image->src()).$title.')';
+    }
+
+    private function isSafeLinkHref(string $href): bool
+    {
+        $scheme = $this->uriScheme($href);
+
+        return $scheme === null
+            || in_array($scheme, ['http', 'https', 'mailto'], true);
+    }
+
+    private function isSafeImageSrc(string $src): bool
+    {
+        $scheme = $this->uriScheme($src);
+
+        if ($scheme === null) {
+            return true;
+        }
+
+        return in_array($scheme, ['http', 'https'], true)
+            || $scheme === 'data' && str_starts_with(strtolower($src), 'data:image/');
+    }
+
+    private function uriScheme(string $uri): ?string
+    {
+        $cleaned = preg_replace('/[\x00-\x20]/', '', $uri) ?? '';
+        $colon = strpos($cleaned, ':');
+
+        if ($colon === false || $colon === 0 || !preg_match('/^[a-zA-Z][a-zA-Z0-9+.\-]*$/', substr($cleaned, 0, $colon))) {
+            return null;
+        }
+
+        return strtolower(substr($cleaned, 0, $colon));
     }
 
     private function escapeText(string $value): string

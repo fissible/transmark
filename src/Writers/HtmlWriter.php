@@ -82,7 +82,7 @@ final class HtmlWriter implements WriterInterface
                     ++$index;
                 }
 
-                $html .= $this->renderSimpleNumberedParagraphs($paragraphs, $document);
+                $html .= $this->renderSimpleNumberedParagraphs($paragraphs, $document, $labels);
                 --$index;
 
                 continue;
@@ -285,7 +285,7 @@ final class HtmlWriter implements WriterInterface
     /**
      * @param Paragraph[] $paragraphs
      */
-    private function renderSimpleNumberedParagraphs(array $paragraphs, Document $document): string
+    private function renderSimpleNumberedParagraphs(array $paragraphs, Document $document, NumberingLabelMap $labels): string
     {
         $html = '';
 
@@ -300,7 +300,15 @@ final class HtmlWriter implements WriterInterface
 
             $ilvl = $numbering->ilvl();
             $numId = $numbering->numId();
-            $descriptor = $this->numberedListDescriptor($document, $numId, $ilvl);
+            $descriptor = $this->numberedListDescriptor(
+                $document,
+                $numId,
+                $ilvl,
+                // Word continues a numId's counter across intervening blocks;
+                // when this run opens a fresh list mid-document the browser
+                // must start from the engine-computed counter, not 1.
+                $labels->counterFor($paragraph),
+            );
 
             while ($stack !== [] && $stack[array_key_last($stack)]['ilvl'] > $ilvl) {
                 $openList = array_pop($stack);
@@ -335,7 +343,7 @@ final class HtmlWriter implements WriterInterface
     /**
      * @return array{tag: string, open: string}
      */
-    private function numberedListDescriptor(Document $document, int $numId, int $ilvl): array
+    private function numberedListDescriptor(Document $document, int $numId, int $ilvl, ?int $counter = null): array
     {
         $level = $document->numbering()->levelFor($numId, $ilvl);
         if ($level === null) {
@@ -347,12 +355,8 @@ final class HtmlWriter implements WriterInterface
         }
 
         $attributes = [];
-        $num = $document->numbering()->num($numId);
-        $levelOverrides = $num?->levelOverrides() ?? [];
-        $start = $levelOverrides[$ilvl] ?? $level->start();
-
-        if ($start !== 1) {
-            $attributes[] = sprintf('start="%d"', $start);
+        if ($counter !== null && $counter !== 1) {
+            $attributes[] = sprintf('start="%d"', $counter);
         }
 
         $listStyleType = $this->listStyleType($level->format());
@@ -487,6 +491,17 @@ final class HtmlWriter implements WriterInterface
             ? 'data:'.$mimeType.';base64,'.base64_encode($data)
             : $src;
 
+        if (!$this->isSafeImageSrc($resolvedSrc)) {
+            // Degrade gracefully like renderLink: emit alt text (+ title)
+            // instead of vanishing entirely. Wrap in <span> for CSS hooks.
+            $fallback = $this->escape($alt);
+            if ($title !== null) {
+                $fallback .= ' ('.$this->escape($title).')';
+            }
+
+            return '<span class="transmark-unsafe-image">'.$fallback.'</span>';
+        }
+
         $html = '<img src="'.$this->escape($resolvedSrc).'" alt="'.$this->escape($alt).'"';
 
         if ($title !== null) {
@@ -506,6 +521,12 @@ final class HtmlWriter implements WriterInterface
 
     private function renderLink(Link $link): string
     {
+        if (!$this->isSafeLinkHref($link->href())) {
+            // Unsafe scheme (javascript:, vbscript:, …): render the link
+            // text without the anchor rather than emitting a live URI.
+            return $this->renderInlines($link->children());
+        }
+
         $title = $link->title() === null
             ? ''
             : ' title="'.$this->escape($link->title()).'"';
@@ -513,6 +534,47 @@ final class HtmlWriter implements WriterInterface
         return '<a href="'.$this->escape($link->href()).'"'.$title.'>'
             .$this->renderInlines($link->children())
             .'</a>';
+    }
+
+    /**
+     * Browsers ignore ASCII control characters and whitespace when
+     * resolving a URI scheme ("jav\tascript:" executes), so they are
+     * stripped before the scheme check. A URI with no scheme at all is
+     * relative (or a fragment) and is treated as safe.
+     */
+    private function uriScheme(string $uri): ?string
+    {
+        // Strip control chars/whitespace FIRST (browsers ignore them when
+        // resolving a scheme), then locate the colon. No truncation —
+        // the regex validation on the scheme part is the protection.
+        $cleaned = preg_replace('/[\x00-\x20]/', '', $uri) ?? '';
+        $colon = strpos($cleaned, ':');
+
+        if ($colon === false || $colon === 0 || !preg_match('/^[a-zA-Z][a-zA-Z0-9+.\-]*$/', substr($cleaned, 0, $colon))) {
+            return null;
+        }
+
+        return strtolower(substr($cleaned, 0, $colon));
+    }
+
+    private function isSafeLinkHref(string $href): bool
+    {
+        $scheme = $this->uriScheme($href);
+
+        return $scheme === null
+            || in_array($scheme, ['http', 'https', 'mailto'], true);
+    }
+
+    private function isSafeImageSrc(string $src): bool
+    {
+        $scheme = $this->uriScheme($src);
+
+        if ($scheme === null) {
+            return true;
+        }
+
+        return in_array($scheme, ['http', 'https'], true)
+            || $scheme === 'data' && str_starts_with(strtolower($src), 'data:image/');
     }
 
     private function escape(string $value): string
