@@ -463,9 +463,10 @@ final class DocxReader implements ReaderInterface
     {
         $numberingProperties = $this->directChild($properties, 'numPr');
         $numId = $this->attributeValue($this->directChild($numberingProperties, 'numId'), 'val');
-        $ilvl = $this->attributeValue($this->directChild($numberingProperties, 'ilvl'), 'val');
+        // An omitted w:ilvl means level 0 (ECMA-376 §17.9.22).
+        $ilvl = $this->attributeValue($this->directChild($numberingProperties, 'ilvl'), 'val') ?? '0';
 
-        if ($numId === null || $ilvl === null) {
+        if ($numId === null) {
             return null;
         }
 
