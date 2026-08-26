@@ -642,20 +642,25 @@ final class DocxWriter implements WriterInterface
                     'code' => true,
                 ]);
             } elseif ($inline instanceof Link) {
-                $relationshipId = $this->addRelationship(
-                    'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink',
-                    $inline->href(),
-                    true,
-                );
-                $hyperlink = $this->wordElement($dom, $parent, 'hyperlink');
-                $hyperlink->setAttributeNS(self::OFFICE_RELATIONSHIPS, 'r:id', $relationshipId);
-                if ($inline->title() !== null) {
-                    $this->wordAttribute($hyperlink, 'tooltip', $inline->title());
+                if (!$this->isSafeLinkHref($inline->href())) {
+                    // Unsafe scheme: render children without hyperlink
+                    $this->renderInlines($dom, $parent, $inline->children(), $inlinePath.'.children', $properties);
+                } else {
+                    $relationshipId = $this->addRelationship(
+                        'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink',
+                        $inline->href(),
+                        true,
+                    );
+                    $hyperlink = $this->wordElement($dom, $parent, 'hyperlink');
+                    $hyperlink->setAttributeNS(self::OFFICE_RELATIONSHIPS, 'r:id', $relationshipId);
+                    if ($inline->title() !== null) {
+                        $this->wordAttribute($hyperlink, 'tooltip', $inline->title());
+                    }
+                    $this->renderInlines($dom, $hyperlink, $inline->children(), $inlinePath.'.children', [
+                        ...$properties,
+                        'hyperlink' => true,
+                    ]);
                 }
-                $this->renderInlines($dom, $hyperlink, $inline->children(), $inlinePath.'.children', [
-                    ...$properties,
-                    'hyperlink' => true,
-                ]);
             } elseif (
                 $inline instanceof InlineImage
                 || $inline instanceof Footnote
@@ -730,27 +735,31 @@ final class DocxWriter implements WriterInterface
             $style = $this->wordElement($dom, $runProperties, 'rStyle');
             $this->wordAttribute($style, 'val', 'Hyperlink');
         }
+        // rPr children follow the CT_RPr schema sequence (ECMA-376
+        // §17.3.2.28): rStyle, rFonts, b, i, strike, u, … vertAlign.
+        // Note strike precedes u — the EG_RPrBase sequence orders strike
+        // ninth and u twenty-seventh, so emitting u first is out of order.
+        if (($properties['code'] ?? false) === true) {
+            $fonts = $this->wordElement($dom, $runProperties, 'rFonts');
+            $this->wordAttribute($fonts, 'ascii', 'Courier New');
+            $this->wordAttribute($fonts, 'hAnsi', 'Courier New');
+        }
         if (($properties['bold'] ?? false) === true) {
             $this->wordElement($dom, $runProperties, 'b');
         }
         if (($properties['italic'] ?? false) === true) {
             $this->wordElement($dom, $runProperties, 'i');
         }
+        if (($properties['strike'] ?? false) === true) {
+            $this->wordElement($dom, $runProperties, 'strike');
+        }
         if (($properties['underline'] ?? false) === true) {
             $underline = $this->wordElement($dom, $runProperties, 'u');
             $this->wordAttribute($underline, 'val', 'single');
         }
-        if (($properties['strike'] ?? false) === true) {
-            $this->wordElement($dom, $runProperties, 'strike');
-        }
         if (isset($properties['verticalAlignment'])) {
             $alignment = $this->wordElement($dom, $runProperties, 'vertAlign');
             $this->wordAttribute($alignment, 'val', (string) $properties['verticalAlignment']);
-        }
-        if (($properties['code'] ?? false) === true) {
-            $fonts = $this->wordElement($dom, $runProperties, 'rFonts');
-            $this->wordAttribute($fonts, 'ascii', 'Courier New');
-            $this->wordAttribute($fonts, 'hAnsi', 'Courier New');
         }
 
         return $run;
@@ -1005,8 +1014,37 @@ final class DocxWriter implements WriterInterface
         return $this->xml($dom);
     }
 
+    private function isSafeLinkHref(string $href): bool
+    {
+        $scheme = $this->uriScheme($href);
+
+        return $scheme === null
+            || in_array($scheme, ['http', 'https', 'mailto'], true);
+    }
+
+    private function uriScheme(string $uri): ?string
+    {
+        $cleaned = preg_replace('/[\x00-\x20]/', '', $uri) ?? '';
+        $colon = strpos($cleaned, ':');
+
+        if ($colon === false || $colon === 0 || !preg_match('/^[a-zA-Z][a-zA-Z0-9+.\-]*$/', substr($cleaned, 0, $colon))) {
+            return null;
+        }
+
+        return strtolower(substr($cleaned, 0, $colon));
+    }
+
     private function addRelationship(string $type, string $target, bool $external = false): string
     {
+        // Repeated links to the same URL share one relationship part.
+        foreach ($this->relationships as $relationship) {
+            if ($relationship['type'] === $type
+                && $relationship['target'] === $target
+                && $relationship['external'] === $external) {
+                return $relationship['id'];
+            }
+        }
+
         $id = 'rId'.$this->nextRelationshipId++;
         $this->relationships[] = [
             'id' => $id,
