@@ -33,6 +33,12 @@ final class HtmlWriterLinkSafetyTest extends TestCase
             'leading whitespace' => ['   javascript:alert(1)'],
             'vbscript' => ['vbscript:msgbox(1)'],
             'html data uri' => ['data:text/html,<script>alert(1)</script>'],
+            // Padding bypass attempts — control chars/whitespace beyond
+            // any fixed-length prefix must not hide the colon
+            '300 leading spaces' => [str_repeat(' ', 300).'javascript:alert(1)'],
+            '50 leading tabs' => [str_repeat("\t", 50).'javascript:alert(1)'],
+            'newline padding' => ["\n\n\njavascript:alert(1)"],
+            'mixed control chars' => ["\x00\x1f javascript:alert(1)"],
         ];
     }
 
@@ -80,7 +86,7 @@ final class HtmlWriterLinkSafetyTest extends TestCase
         $html = (new HtmlWriter())->write($document);
 
         self::assertStringNotContainsString('javascript:', $html);
-        self::assertSame('', $html);
+        self::assertStringContainsString('<span class="transmark-unsafe-image">alt text</span>', $html);
     }
 
     public function test_embedded_data_image_src_is_preserved(): void

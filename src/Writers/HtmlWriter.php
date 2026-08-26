@@ -488,7 +488,14 @@ final class HtmlWriter implements WriterInterface
             : $src;
 
         if (!$this->isSafeImageSrc($resolvedSrc)) {
-            return '';
+            // Degrade gracefully like renderLink: emit alt text (+ title)
+            // instead of vanishing entirely. Wrap in <span> for CSS hooks.
+            $fallback = $this->escape($alt);
+            if ($title !== null) {
+                $fallback .= ' ('.$this->escape($title).')';
+            }
+
+            return '<span class="transmark-unsafe-image">'.$fallback.'</span>';
         }
 
         $html = '<img src="'.$this->escape($resolvedSrc).'" alt="'.$this->escape($alt).'"';
@@ -533,7 +540,10 @@ final class HtmlWriter implements WriterInterface
      */
     private function uriScheme(string $uri): ?string
     {
-        $cleaned = preg_replace('/[\x00-\x20]/', '', substr($uri, 0, 32)) ?? '';
+        // Strip control chars/whitespace FIRST (browsers ignore them when
+        // resolving a scheme), then locate the colon. No truncation —
+        // the regex validation on the scheme part is the protection.
+        $cleaned = preg_replace('/[\x00-\x20]/', '', $uri) ?? '';
         $colon = strpos($cleaned, ':');
 
         if ($colon === false || $colon === 0 || !preg_match('/^[a-zA-Z][a-zA-Z0-9+.\-]*$/', substr($cleaned, 0, $colon))) {
