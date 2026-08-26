@@ -67,6 +67,91 @@ final class DocxReaderHyperlinkTest extends TestCase
         self::assertSame('plain now', $paragraph[0]->content());
     }
 
+    public function test_unresolvable_rid_falls_back_to_anchor(): void
+    {
+        $paragraph = $this->readParagraph(
+            '<w:hyperlink r:id="rIdMissing" w:anchor="section3"><w:r><w:t>anchor</w:t></w:r></w:hyperlink>',
+            [],
+        );
+
+        self::assertInstanceOf(Link::class, $paragraph[0]);
+        self::assertSame('#section3', $paragraph[0]->href());
+    }
+
+    public function test_hyperlink_inside_table_cell_is_preserved(): void
+    {
+        $rels = '<?xml version="1.0"?><Relationships '
+            .'xmlns="http://schemas.openxmlformats.org/package/2006/relationships">';
+        $rels .= '<Relationship Id="rId1" '
+            .'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" '
+            .'Target="https://example.com/" TargetMode="External"/>';
+        $rels .= '</Relationships>';
+
+        $bodyXml = '<w:tbl xmlns:w="'.self::NS.'">'
+                    .'<w:tr>'
+                    .'<w:tc><w:tcPr/><w:p><w:hyperlink r:id="rId1"><w:r><w:t>cell link</w:t></w:r></w:hyperlink></w:p></w:tc>'
+                    .'</w:tr>'
+                    .'</w:tbl>';
+
+        $document = (new DocxReader())->read($this->docxWithBodyAndRels($bodyXml, $rels));
+
+        $table = $document->content()[0];
+        self::assertInstanceOf(\Fissible\Transmark\Nodes\Block\Table::class, $table);
+        $cell = $table->rows()[0]->cells()[0];
+        $paragraph = $cell->content()[0];
+        self::assertInstanceOf(\Fissible\Transmark\Nodes\Block\Paragraph::class, $paragraph);
+        $link = $paragraph->inlines()[0];
+        self::assertInstanceOf(Link::class, $link);
+        self::assertSame('https://example.com/', $link->href());
+    }
+
+    public function test_non_external_target_mode_is_ignored(): void
+    {
+        $rels = '<?xml version="1.0"?><Relationships '
+            .'xmlns="http://schemas.openxmlformats.org/package/2006/relationships">';
+        $rels .= '<Relationship Id="rId1" '
+            .'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" '
+            .'Target="internal-target" TargetMode="Internal"/>';
+        $rels .= '</Relationships>';
+
+        $paragraph = (new DocxReader())->read($this->docxWithBodyAndRels(
+            '<w:p><w:hyperlink r:id="rId1"><w:r><w:t>ignored</w:t></w:r></w:hyperlink></w:p>',
+            $rels,
+        ))->content()[0];
+
+        self::assertInstanceOf(\Fissible\Transmark\Nodes\Inline\Text::class, $paragraph->inlines()[0]);
+    }
+
+    /**
+     * Builds a DOCX with custom body XML and relationships XML.
+     */
+    private function docxWithBodyAndRels(string $bodyXml, string $rels): string
+    {
+        $document = '<?xml version="1.0"?><w:document xmlns:w="'.self::NS.'" '
+            .'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            .'<w:body>'.$bodyXml.'</w:body></w:document>';
+
+        $path = tempnam(sys_get_temp_dir(), 'transmark-link-test-');
+        self::assertIsString($path);
+
+        try {
+            $zip = new \ZipArchive();
+            self::assertTrue($zip->open($path, \ZipArchive::OVERWRITE));
+            self::assertTrue($zip->addFromString('word/document.xml', $document));
+            self::assertTrue($zip->addFromString('word/_rels/document.xml.rels', $rels));
+            self::assertTrue($zip->close());
+
+            $bytes = file_get_contents($path);
+            self::assertIsString($bytes);
+
+            return $bytes;
+        } finally {
+            if (is_file($path)) {
+                unlink($path);
+            }
+        }
+    }
+
     public function test_link_survives_docx_to_html_conversion(): void
     {
         $document = (new DocxReader())->read($this->docx(

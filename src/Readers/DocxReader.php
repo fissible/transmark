@@ -196,6 +196,13 @@ final class DocxReader implements ReaderInterface
                 continue;
             }
 
+            // Only external hyperlinks become absolute URIs in the output.
+            // Internal (package-relative) and anchor links are handled via w:anchor.
+            $targetMode = $relationship->getAttribute('TargetMode');
+            if ($targetMode !== 'External') {
+                continue;
+            }
+
             $hyperlinks[$id] = $target;
         }
 
@@ -219,7 +226,7 @@ final class DocxReader implements ReaderInterface
             if ($child->localName === 'p') {
                 $content[] = $this->parseParagraph($child, $images, $hyperlinks);
             } elseif ($child->localName === 'tbl') {
-                $content[] = $this->parseTable($child, $images);
+                $content[] = $this->parseTable($child, $images, $hyperlinks);
             }
         }
 
@@ -232,7 +239,7 @@ final class DocxReader implements ReaderInterface
      * dropped, mirroring HtmlReader's/PdfReader's "only the first heading
      * row" convention elsewhere in this project.
      */
-    private function parseTable(\DOMElement $tbl, array $images): Table
+    private function parseTable(\DOMElement $tbl, array $images, array $hyperlinks = []): Table
     {
         $header = null;
         $rows = [];
@@ -246,7 +253,7 @@ final class DocxReader implements ReaderInterface
                 continue;
             }
 
-            $row = $this->parseTableRow($child, $images);
+            $row = $this->parseTableRow($child, $images, $hyperlinks);
 
             if ($header === null && $this->isHeaderRow($child)) {
                 $header = $row;
@@ -265,7 +272,7 @@ final class DocxReader implements ReaderInterface
         return $this->directChild($properties, 'tblHeader') !== null;
     }
 
-    private function parseTableRow(\DOMElement $tr, array $images): TableRow
+    private function parseTableRow(\DOMElement $tr, array $images, array $hyperlinks = []): TableRow
     {
         $cells = [];
 
@@ -278,7 +285,7 @@ final class DocxReader implements ReaderInterface
                 continue;
             }
 
-            $cells[] = $this->parseTableCell($child, $images);
+            $cells[] = $this->parseTableCell($child, $images, $hyperlinks);
         }
 
         return new TableRow($cells);
@@ -293,13 +300,13 @@ final class DocxReader implements ReaderInterface
      * originating cell's rowspan. No content is lost; the merge itself
      * doesn't round-trip.
      */
-    private function parseTableCell(\DOMElement $tc, array $images): TableCell
+    private function parseTableCell(\DOMElement $tc, array $images, array $hyperlinks = []): TableCell
     {
         $properties = $this->directChild($tc, 'tcPr');
         $gridSpan = $this->attributeValue($this->directChild($properties, 'gridSpan'), 'val');
         $colspan = $gridSpan === null ? 1 : max(1, (int) $gridSpan);
 
-        return new TableCell($this->parseBodyChildren($tc, $images), $colspan);
+        return new TableCell($this->parseBodyChildren($tc, $images, $hyperlinks), $colspan);
     }
 
     private function parseNumbering(?\DOMDocument $numberingXml): NumberingDefinitions
@@ -571,11 +578,16 @@ final class DocxReader implements ReaderInterface
         $relationshipId = $this->relationshipAttributeValue($element, 'id');
         $anchor = $this->attributeValue($element, 'anchor');
 
-        $href = match (true) {
-            $relationshipId !== null => $hyperlinks[$relationshipId] ?? null,
-            $anchor !== null => '#'.$anchor,
-            default => null,
-        };
+        $href = null;
+
+        if ($relationshipId !== null) {
+            $href = $hyperlinks[$relationshipId] ?? null;
+        }
+
+        // Fall back to w:anchor when r:id is absent or unresolvable
+        if ($href === null && $anchor !== null) {
+            $href = '#'.$anchor;
+        }
 
         if ($href === null) {
             return $children;
