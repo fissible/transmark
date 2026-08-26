@@ -642,20 +642,25 @@ final class DocxWriter implements WriterInterface
                     'code' => true,
                 ]);
             } elseif ($inline instanceof Link) {
-                $relationshipId = $this->addRelationship(
-                    'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink',
-                    $inline->href(),
-                    true,
-                );
-                $hyperlink = $this->wordElement($dom, $parent, 'hyperlink');
-                $hyperlink->setAttributeNS(self::OFFICE_RELATIONSHIPS, 'r:id', $relationshipId);
-                if ($inline->title() !== null) {
-                    $this->wordAttribute($hyperlink, 'tooltip', $inline->title());
+                if (!$this->isSafeLinkHref($inline->href())) {
+                    // Unsafe scheme: render children without hyperlink
+                    $this->renderInlines($dom, $parent, $inline->children(), $inlinePath.'.children', $properties);
+                } else {
+                    $relationshipId = $this->addRelationship(
+                        'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink',
+                        $inline->href(),
+                        true,
+                    );
+                    $hyperlink = $this->wordElement($dom, $parent, 'hyperlink');
+                    $hyperlink->setAttributeNS(self::OFFICE_RELATIONSHIPS, 'r:id', $relationshipId);
+                    if ($inline->title() !== null) {
+                        $this->wordAttribute($hyperlink, 'tooltip', $inline->title());
+                    }
+                    $this->renderInlines($dom, $hyperlink, $inline->children(), $inlinePath.'.children', [
+                        ...$properties,
+                        'hyperlink' => true,
+                    ]);
                 }
-                $this->renderInlines($dom, $hyperlink, $inline->children(), $inlinePath.'.children', [
-                    ...$properties,
-                    'hyperlink' => true,
-                ]);
             } elseif (
                 $inline instanceof InlineImage
                 || $inline instanceof Footnote
@@ -1005,6 +1010,26 @@ final class DocxWriter implements WriterInterface
         }
 
         return $this->xml($dom);
+    }
+
+    private function isSafeLinkHref(string $href): bool
+    {
+        $scheme = $this->uriScheme($href);
+
+        return $scheme === null
+            || in_array($scheme, ['http', 'https', 'mailto'], true);
+    }
+
+    private function uriScheme(string $uri): ?string
+    {
+        $cleaned = preg_replace('/[\x00-\x20]/', '', $uri) ?? '';
+        $colon = strpos($cleaned, ':');
+
+        if ($colon === false || $colon === 0 || !preg_match('/^[a-zA-Z][a-zA-Z0-9+.\-]*$/', substr($cleaned, 0, $colon))) {
+            return null;
+        }
+
+        return strtolower(substr($cleaned, 0, $colon));
     }
 
     private function addRelationship(string $type, string $target, bool $external = false): string
