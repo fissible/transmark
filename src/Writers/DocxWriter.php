@@ -730,6 +730,13 @@ final class DocxWriter implements WriterInterface
             $style = $this->wordElement($dom, $runProperties, 'rStyle');
             $this->wordAttribute($style, 'val', 'Hyperlink');
         }
+        // rPr children follow the CT_RPr schema sequence (ECMA-376
+        // §17.3.2.28): rStyle, rFonts, b, i, u, strike, … vertAlign.
+        if (($properties['code'] ?? false) === true) {
+            $fonts = $this->wordElement($dom, $runProperties, 'rFonts');
+            $this->wordAttribute($fonts, 'ascii', 'Courier New');
+            $this->wordAttribute($fonts, 'hAnsi', 'Courier New');
+        }
         if (($properties['bold'] ?? false) === true) {
             $this->wordElement($dom, $runProperties, 'b');
         }
@@ -746,11 +753,6 @@ final class DocxWriter implements WriterInterface
         if (isset($properties['verticalAlignment'])) {
             $alignment = $this->wordElement($dom, $runProperties, 'vertAlign');
             $this->wordAttribute($alignment, 'val', (string) $properties['verticalAlignment']);
-        }
-        if (($properties['code'] ?? false) === true) {
-            $fonts = $this->wordElement($dom, $runProperties, 'rFonts');
-            $this->wordAttribute($fonts, 'ascii', 'Courier New');
-            $this->wordAttribute($fonts, 'hAnsi', 'Courier New');
         }
 
         return $run;
@@ -1007,6 +1009,22 @@ final class DocxWriter implements WriterInterface
 
     private function addRelationship(string $type, string $target, bool $external = false): string
     {
+        // Repeated links to the same URL share one relationship part.
+        $existingKey = array_search(
+            true,
+            array_map(
+                static fn (array $relationship): bool => $relationship['type'] === $type
+                    && $relationship['target'] === $target
+                    && $relationship['external'] === $external,
+                $this->relationships,
+            ),
+            true,
+        );
+
+        if ($existingKey !== false) {
+            return $this->relationships[$existingKey]['id'];
+        }
+
         $id = 'rId'.$this->nextRelationshipId++;
         $this->relationships[] = [
             'id' => $id,
