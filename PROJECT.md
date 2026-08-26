@@ -299,14 +299,14 @@ against the implemented HTML and OOXML conventions.
 | 20 | `HtmlWriter`: `renderInline()` also silently drops unsupported inline types (`InlineImage`/`Footnote`/`Comment`); same fix pattern as #45, one level down | XS-S | #45 (done) | [#47](https://github.com/fissible/transmark/issues/47) | Done |
 | 21 | `HtmlReader`: block-position inline-run coalescing limited to the static `INLINE_TAGS` list (`<div>a <ins>b</ins> c</div>` fragments into 3 paragraphs instead of 1; no content lost) | S | #43 (done) | [#49](https://github.com/fissible/transmark/issues/49) | Done — expanded `INLINE_TAGS` to the closed HTML5 phrasing-content set; `img` at block position intentionally left as-is (separate design tradeoff, not a bug) |
 | 22 | `HtmlReader`: `<p>`/heading content not edge-trimmed, leaks literal newlines from pretty-printed HTML (`<p>\n  Hello\n</p>`) into downstream writer output | XS-S | #43 (done) | [#50](https://github.com/fissible/transmark/issues/50) | Done |
-| 23 | `DocxReader`: unsupported `w:numFmt` values degrade to decimal instead of `ValueError` | XS | none | [#64](https://github.com/fissible/transmark/issues/64) | PR [#72](https://github.com/fissible/transmark/pull/72) open |
-| 24 | `DocxReader`: omitted `w:ilvl` in `numPr` defaults to level 0 (ECMA-376 §17.9.22); `numId` 0 cancels numbering (§17.9.18) | XS | none | [#65](https://github.com/fissible/transmark/issues/65) | PR [#73](https://github.com/fissible/transmark/pull/73) open |
-| 25 | `DocxReader`: hyperlinks survive reads (r:id + w:anchor, incl. table cells); round-trip lossless | S | #6, #7 | [#67](https://github.com/fissible/transmark/issues/67) | PR [#74](https://github.com/fissible/transmark/pull/74) open |
-| 26 | `HtmlWriter`/`MarkdownWriter`/`DocxWriter`: URI scheme allowlist for links/images (XSS hardening) | XS | none | [#68](https://github.com/fissible/transmark/issues/68) | PR [#75](https://github.com/fissible/transmark/pull/75) open |
-| 27 | `MarkdownWriter`: legal outlines emit flat (no per-level indent → avoids code-block parsing) | XS | none | [#70](https://github.com/fissible/transmark/issues/70) | PR [#76](https://github.com/fissible/transmark/pull/76) open |
-| 28 | `MarkdownReader`: soft breaks → space, hard breaks → LineBreak | XS | none | [#71](https://github.com/fissible/transmark/issues/71) | PR [#77](https://github.com/fissible/transmark/pull/77) open |
-| 29 | `HtmlWriter`/`MarkdownWriter`: list counters continue across interruptions via shared `NumberingLabelMap::counterFor()` | S | #6–#7, #12 | [#69](https://github.com/fissible/transmark/issues/69) | PR [#78](https://github.com/fissible/transmark/pull/78) open |
-| 30 | `DocxWriter`: rPr children in CT_RPr schema order (strike before u); O(n) relationship dedupe | XS | none | [#63](https://github.com/fissible/transmark/issues/63) | PR [#79](https://github.com/fissible/transmark/pull/79) open |
+| 23 | `DocxReader`: unsupported `w:numFmt` values degrade to decimal instead of `ValueError` | XS | none | [#64](https://github.com/fissible/transmark/issues/64) | Done |
+| 24 | `DocxReader`: omitted `w:ilvl` in `numPr` defaults to level 0 (ECMA-376 §17.9.22); `numId` 0 cancels numbering (§17.9.18) | XS | none | [#65](https://github.com/fissible/transmark/issues/65) | Done |
+| 25 | `DocxReader`: hyperlinks survive reads (r:id + w:anchor, incl. table cells); round-trip lossless | S | #6, #7 | [#67](https://github.com/fissible/transmark/issues/67) | Done |
+| 26 | `HtmlWriter`/`MarkdownWriter`/`DocxWriter`: URI scheme allowlist for links/images (XSS hardening) | XS | none | [#68](https://github.com/fissible/transmark/issues/68) | Done |
+| 27 | `MarkdownWriter`: legal outlines emit flat (no per-level indent → avoids code-block parsing) | XS | none | [#70](https://github.com/fissible/transmark/issues/70) | Done |
+| 28 | `MarkdownReader`: soft breaks → space, hard breaks → LineBreak | XS | none | [#71](https://github.com/fissible/transmark/issues/71) | Done |
+| 29 | `HtmlWriter`/`MarkdownWriter`: list counters continue across interruptions via shared `NumberingLabelMap::counterFor()` | S | #6–#7, #12 | [#69](https://github.com/fissible/transmark/issues/69) | Done |
+| 30 | `DocxWriter`: rPr children in CT_RPr schema order (strike before u); O(n) relationship dedupe | XS | none | [#63](https://github.com/fissible/transmark/issues/63) | Done |
 
 ## Session handoff notes
 
@@ -436,13 +436,32 @@ public repos and released on Packagist:
 (`Workbook`/`Sheet`/`Cell` reader/writer sharing `OoxmlPackage`). #13/#14
 closed.
 
-**Next task:** merge the eight open PRs (#72–#79) from the 2026-08-26 audit
-fix wave. They are independent and all branch from v0.4.1. After merging,
-#31/#32-style roadmap work resumes; also consider the test-corpus gap noted
-in the audit (no real-world Word files exercising ordinals/hyperlinks/
-omitted-ilvl end to end).
+**Completed (2026-08-26, audit fix wave merged):** all nine PRs (#72–#80)
+from the deep-dive audit are merged, closing #63–#71. Review of the wave
+itself caught three things the fixes had missed: the `uriScheme()` XSS
+hardening still truncated before stripping control characters (so padding
+past the window restored the bypass), the relationship dedupe was left at
+O(n²), and the `numId` 0 fix had been written on the hyperlinks branch
+rather than the one that introduced the regression.
 
-**Release decision:** v0.3.0 shipped (native DOCX output + cross-format
-semantic-idempotence contract). No release currently pending.
+**Next task:** none currently scoped. Candidates, in rough priority order:
+a shared `Support\Uri` scheme policy — `uriScheme`/`isSafeLinkHref`/
+`isSafeImageSrc` are currently duplicated across `HtmlWriter`,
+`MarkdownWriter`, and `DocxWriter`, so the next allowlist change lands in
+three places; the test-corpus gap noted in the audit (no real-world Word
+files exercising ordinals/hyperlinks/omitted-ilvl end to end); and
+#31/#32-style roadmap work.
+
+**Known lossy cases accepted in this wave, not bugs:** a `w:hyperlink`
+carrying both `r:id` and `w:anchor` drops the fragment (ECMA-376 §17.16.22
+says anchor is ignored when `r:id` is present, but Word does not reliably
+separate fragments); a `lvlRestart="0"` level has no test in the
+simple-list path; and legal outlines lose depth in Markdown, which HTML
+still carries via `legal-level-N` classes.
+
+**Release decision:** v0.4.2 shipped (audit fix wave: XSS hardening for
+link/image URIs across all three writers, DOCX hyperlink reading incl.
+table cells, `numId` 0 handling, list-counter continuation, CT_RPr child
+ordering). No release currently pending.
 
 **Blockers:** none.
