@@ -82,7 +82,7 @@ final class HtmlWriter implements WriterInterface
                     ++$index;
                 }
 
-                $html .= $this->renderSimpleNumberedParagraphs($paragraphs, $document);
+                $html .= $this->renderSimpleNumberedParagraphs($paragraphs, $document, $labels);
                 --$index;
 
                 continue;
@@ -285,7 +285,7 @@ final class HtmlWriter implements WriterInterface
     /**
      * @param Paragraph[] $paragraphs
      */
-    private function renderSimpleNumberedParagraphs(array $paragraphs, Document $document): string
+    private function renderSimpleNumberedParagraphs(array $paragraphs, Document $document, NumberingLabelMap $labels): string
     {
         $html = '';
 
@@ -300,7 +300,15 @@ final class HtmlWriter implements WriterInterface
 
             $ilvl = $numbering->ilvl();
             $numId = $numbering->numId();
-            $descriptor = $this->numberedListDescriptor($document, $numId, $ilvl);
+            $descriptor = $this->numberedListDescriptor(
+                $document,
+                $numId,
+                $ilvl,
+                // Word continues a numId's counter across intervening blocks;
+                // when this run opens a fresh list mid-document the browser
+                // must start from the engine-computed counter, not 1.
+                $labels->counterFor($paragraph),
+            );
 
             while ($stack !== [] && $stack[array_key_last($stack)]['ilvl'] > $ilvl) {
                 $openList = array_pop($stack);
@@ -335,7 +343,7 @@ final class HtmlWriter implements WriterInterface
     /**
      * @return array{tag: string, open: string}
      */
-    private function numberedListDescriptor(Document $document, int $numId, int $ilvl): array
+    private function numberedListDescriptor(Document $document, int $numId, int $ilvl, ?int $counter = null): array
     {
         $level = $document->numbering()->levelFor($numId, $ilvl);
         if ($level === null) {
@@ -347,12 +355,8 @@ final class HtmlWriter implements WriterInterface
         }
 
         $attributes = [];
-        $num = $document->numbering()->num($numId);
-        $levelOverrides = $num?->levelOverrides() ?? [];
-        $start = $levelOverrides[$ilvl] ?? $level->start();
-
-        if ($start !== 1) {
-            $attributes[] = sprintf('start="%d"', $start);
+        if ($counter !== null && $counter !== 1) {
+            $attributes[] = sprintf('start="%d"', $counter);
         }
 
         $listStyleType = $this->listStyleType($level->format());

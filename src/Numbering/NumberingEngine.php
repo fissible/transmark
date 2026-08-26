@@ -14,6 +14,8 @@ final class NumberingEngine implements NumberingEngineInterface
         /** @var array<int, array<int, int>> $counters */
         $counters = [];
         $labels = [];
+        /** @var array<int, array{ilvl: int, value: int}> $countersByParagraph */
+        $countersByParagraph = [];
 
         foreach (ParagraphWalker::paragraphsIn($document->content()) as $paragraph) {
             $numbering = $paragraph->numbering();
@@ -43,15 +45,20 @@ final class NumberingEngine implements NumberingEngineInterface
                 }
             }
 
-            $labels[spl_object_id($paragraph)] = $this->renderLabel(
+            $paragraphObjectId = spl_object_id($paragraph);
+            $labels[$paragraphObjectId] = $this->renderLabel(
                 $document->numbering(),
                 $numId,
                 $level,
                 $counters[$numId],
             );
+            $countersByParagraph[$paragraphObjectId] = [
+                'ilvl' => $ilvl,
+                'value' => $counters[$numId][$ilvl],
+            ];
         }
 
-        return new NumberingLabelMap($labels);
+        return new NumberingLabelMap($labels, $countersByParagraph);
     }
 
     /**
