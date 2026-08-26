@@ -37,6 +37,18 @@ final class DocxReaderNumberingRefTest extends TestCase
         self::assertSame(2, $paragraph->numbering()->ilvl());
     }
 
+    public function test_numpr_with_numid_zero_cancels_numbering(): void
+    {
+        // numId "0" means "cancel inherited numbering" (ECMA-376 §17.9.18).
+        $document = (new DocxReader())->read($this->docx(
+            '<w:numPr><w:numId w:val="0"/></w:numPr>',
+        ));
+
+        $paragraph = $document->content()[0];
+        self::assertInstanceOf(Paragraph::class, $paragraph);
+        self::assertNull($paragraph->numbering());
+    }
+
     /**
      * Builds a DOCX whose only paragraph carries the given numPr XML.
      */
