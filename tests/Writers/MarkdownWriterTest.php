@@ -118,7 +118,7 @@ final class MarkdownWriterTest extends TestCase
 
         $markdown = (new MarkdownWriter())->write($document);
 
-        self::assertSame("1\\. Parent\n\n  1\\.1\\. Child\n", $markdown);
+        self::assertSame("1\\. Parent\n\n1\\.1\\. Child\n", $markdown);
         $roundTripped = (new MarkdownReader())->read($markdown);
         self::assertInstanceOf(Paragraph::class, $roundTripped->content()[0]);
         self::assertSame('1. Parent', $roundTripped->content()[0]->inlines()[0]->content());
@@ -160,7 +160,7 @@ final class MarkdownWriterTest extends TestCase
         $markdown = (new MarkdownWriter())->write($document);
 
         self::assertSame(
-            "1\\. Green\n\n- Dark green\n- Light green\n\n2\\. Red\n\n  2\\.1\\. Super Red\n",
+            "1\\. Green\n\n- Dark green\n- Light green\n\n2\\. Red\n\n2\\.1\\. Super Red\n",
             $markdown,
         );
 
