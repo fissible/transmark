@@ -125,6 +125,29 @@ MD);
         self::assertInstanceOf(LineBreak::class, $paragraph->inlines()[2]);
     }
 
+    public function test_soft_line_break_maps_to_a_space_not_a_hard_break(): void
+    {
+        // A single trailing newline is a soft break: CommonMark renders it
+        // as a space, not a <br>.
+        $document = (new MarkdownReader())->read("line one\nline two\n");
+
+        $paragraph = $document->content()[0];
+        self::assertInstanceOf(Paragraph::class, $paragraph);
+        self::assertCount(3, $paragraph->inlines());
+        self::assertInstanceOf(Text::class, $paragraph->inlines()[0]);
+        self::assertInstanceOf(Text::class, $paragraph->inlines()[1]);
+        self::assertSame(' ', $paragraph->inlines()[1]->content());
+        self::assertInstanceOf(Text::class, $paragraph->inlines()[2]);
+    }
+
+    public function test_backslash_hard_break_still_maps_to_a_line_break_node(): void
+    {
+        $paragraph = (new MarkdownReader())->read("line one\\\nline two\n")->content()[0];
+
+        self::assertInstanceOf(Paragraph::class, $paragraph);
+        self::assertInstanceOf(LineBreak::class, $paragraph->inlines()[1]);
+    }
+
     public function test_strikethrough_via_gfm_extension_produces_a_strike_node(): void
     {
         $paragraph = (new MarkdownReader())->read('~~removed~~')->content()[0];
