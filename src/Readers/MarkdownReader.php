@@ -223,7 +223,9 @@ final class MarkdownReader implements ReaderInterface
                 $node->getTitle(),
             ),
             $node instanceof CommonMarkCode => new Code($node->getLiteral()),
-            $node instanceof Newline => new LineBreak(),
+            $node instanceof Newline => $node->getType() === Newline::HARDBREAK
+                ? new LineBreak()
+                : new Text(' '),
             default => null,
         };
     }
