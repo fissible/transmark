@@ -736,7 +736,9 @@ final class DocxWriter implements WriterInterface
             $this->wordAttribute($style, 'val', 'Hyperlink');
         }
         // rPr children follow the CT_RPr schema sequence (ECMA-376
-        // §17.3.2.28): rStyle, rFonts, b, i, u, strike, … vertAlign.
+        // §17.3.2.28): rStyle, rFonts, b, i, strike, u, … vertAlign.
+        // Note strike precedes u — the EG_RPrBase sequence orders strike
+        // ninth and u twenty-seventh, so emitting u first is out of order.
         if (($properties['code'] ?? false) === true) {
             $fonts = $this->wordElement($dom, $runProperties, 'rFonts');
             $this->wordAttribute($fonts, 'ascii', 'Courier New');
@@ -1035,19 +1037,12 @@ final class DocxWriter implements WriterInterface
     private function addRelationship(string $type, string $target, bool $external = false): string
     {
         // Repeated links to the same URL share one relationship part.
-        $existingKey = array_search(
-            true,
-            array_map(
-                static fn (array $relationship): bool => $relationship['type'] === $type
-                    && $relationship['target'] === $target
-                    && $relationship['external'] === $external,
-                $this->relationships,
-            ),
-            true,
-        );
-
-        if ($existingKey !== false) {
-            return $this->relationships[$existingKey]['id'];
+        foreach ($this->relationships as $relationship) {
+            if ($relationship['type'] === $type
+                && $relationship['target'] === $target
+                && $relationship['external'] === $external) {
+                return $relationship['id'];
+            }
         }
 
         $id = 'rId'.$this->nextRelationshipId++;
