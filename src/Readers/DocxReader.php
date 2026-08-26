@@ -400,7 +400,13 @@ final class DocxReader implements ReaderInterface
             if ($child->localName === 'start' && $value !== null) {
                 $start = (int) $value;
             } elseif ($child->localName === 'numFmt' && $value !== null) {
-                $format = NumberFormat::from($value);
+                // Formats outside the supported set (ordinal, chicago, hex, …)
+                // degrade to decimal rendering instead of aborting the read.
+                try {
+                    $format = NumberFormat::from($value);
+                } catch (\ValueError) {
+                    $format = NumberFormat::Decimal;
+                }
             } elseif ($child->localName === 'lvlText' && $value !== null) {
                 $lvlText = $value;
             } elseif ($child->localName === 'isLgl') {
@@ -508,9 +514,17 @@ final class DocxReader implements ReaderInterface
     {
         $numberingProperties = $this->directChild($properties, 'numPr');
         $numId = $this->attributeValue($this->directChild($numberingProperties, 'numId'), 'val');
-        $ilvl = $this->attributeValue($this->directChild($numberingProperties, 'ilvl'), 'val');
 
-        if ($numId === null || $ilvl === null) {
+        // numId "0" means "cancel inherited numbering" (ECMA-376 §17.9.18).
+        // Any explicit or defaulted ilvl is ignored; the paragraph is unnumbered.
+        if ($numId === '0') {
+            return null;
+        }
+
+        // An omitted w:ilvl means level 0 (ECMA-376 §17.9.22).
+        $ilvl = $this->attributeValue($this->directChild($numberingProperties, 'ilvl'), 'val') ?? '0';
+
+        if ($numId === null) {
             return null;
         }
 
