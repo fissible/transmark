@@ -135,6 +135,7 @@ $html = (new HtmlWriter())->write($document);
 ```
 
 `DocxReader` currently covers paragraphs, headings, core inline formatting,
+hyperlinks (external relationship targets and internal bookmark anchors),
 and Word numbering definitions. Numbering formats outside the supported set
 (`decimal`, `lowerLetter`/`upperLetter`, `lowerRoman`/`upperRoman`, `bullet`,
 `none`) — e.g. `ordinal` or `chicago` — degrade to decimal rendering of the
