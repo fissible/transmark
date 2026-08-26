@@ -211,6 +211,7 @@ final class DocxReader implements ReaderInterface
 
     /**
      * @param array<string, array{path: string, data: string, mimeType: string}> $images
+     * @param array<string, string>                                              $hyperlinks relationship id => external target URI
      *
      * @return BlockInterface[]
      */
