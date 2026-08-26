@@ -748,12 +748,12 @@ final class DocxWriter implements WriterInterface
         if (($properties['italic'] ?? false) === true) {
             $this->wordElement($dom, $runProperties, 'i');
         }
+        if (($properties['strike'] ?? false) === true) {
+            $this->wordElement($dom, $runProperties, 'strike');
+        }
         if (($properties['underline'] ?? false) === true) {
             $underline = $this->wordElement($dom, $runProperties, 'u');
             $this->wordAttribute($underline, 'val', 'single');
-        }
-        if (($properties['strike'] ?? false) === true) {
-            $this->wordElement($dom, $runProperties, 'strike');
         }
         if (isset($properties['verticalAlignment'])) {
             $alignment = $this->wordElement($dom, $runProperties, 'vertAlign');

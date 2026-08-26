@@ -8,8 +8,10 @@ use Fissible\Transmark\Document;
 use Fissible\Transmark\Nodes\Block\Paragraph;
 use Fissible\Transmark\Nodes\Inline\Code;
 use Fissible\Transmark\Nodes\Inline\Link;
+use Fissible\Transmark\Nodes\Inline\Strike;
 use Fissible\Transmark\Nodes\Inline\Strong;
 use Fissible\Transmark\Nodes\Inline\Text;
+use Fissible\Transmark\Nodes\Inline\Underline;
 use Fissible\Transmark\Writers\DocxWriter;
 use PHPUnit\Framework\TestCase;
 
@@ -41,8 +43,26 @@ final class DocxWriterOoxmlOrderingTest extends TestCase
         );
     }
 
-    public function test_identical_hyperlink_targets_share_one_relationship(): void
+    public function test_strike_before_underline_in_rpr_order(): void
     {
+        // Strike must precede underline per ECMA-376 §17.3.2.28 CT_RPr sequence.
+        $document = new Document([new Paragraph([
+            new Underline([new Strike([new Text('strike and underline')])]),
+        ])]);
+
+        $documentXml = $this->documentXmlOf($document);
+        $run = $documentXml->getElementsByTagNameNS(self::W_NS, 'r')->item(0);
+        self::assertNotNull($run);
+
+        self::assertSame(
+            ['strike', 'u'],
+            $this->rPrChildOrder($run),
+        );
+    }
+
+    public function test_relationship_dedupe_is_linear_not_quadratic(): void
+    {
+        // Three identical links should produce exactly one relationship entry.
         $link = static fn (): Link => new Link('https://example.com', [new Text('x')], null);
         $document = new Document([new Paragraph([$link(), $link(), $link()])]);
 
