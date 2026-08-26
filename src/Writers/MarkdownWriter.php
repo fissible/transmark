@@ -146,9 +146,9 @@ final class MarkdownWriter implements WriterInterface
         ) {
             $prefix = $label === '' ? '' : $this->escapeLegalLabel($label).' ';
 
-            return str_repeat('  ', $numbering->ilvl())
-                .$prefix
-                .$this->renderInlines($paragraph->inlines());
+            // No per-level indentation: four or more leading spaces parse as
+            // an indented code block, so the label alone carries the depth.
+            return $prefix.$this->renderInlines($paragraph->inlines());
         }
 
         return $this->renderInlines($paragraph->inlines());
@@ -428,6 +428,7 @@ final class MarkdownWriter implements WriterInterface
     private function renderLink(Link $link): string
     {
         if (!$this->isSafeLinkHref($link->href())) {
+            // Unsafe scheme: render link text without the anchor
             return $this->renderInlines($link->children());
         }
 
@@ -440,6 +441,7 @@ final class MarkdownWriter implements WriterInterface
     private function renderInlineImage(InlineImage $image): string
     {
         if (!$this->isSafeImageSrc($image->src())) {
+            // Unsafe scheme: render alt text
             return $this->escapeText($image->alt());
         }
 
