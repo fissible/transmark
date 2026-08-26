@@ -458,10 +458,11 @@ public repos and released on Packagist:
 (`Workbook`/`Sheet`/`Cell` reader/writer sharing `OoxmlPackage`). #13/#14
 closed.
 
-**Next task:** none currently scoped. All three satellite packages
-(`transmark-pdf`, `transmark-blade`, `transmark-xlsx`) are released; the
-core `transmark` backlog (#1-#37) is complete. Revisit this file when new
-work is identified.
+**Next task:** merge the eight open PRs (#72–#79) from the 2026-08-26 audit
+fix wave. They are independent and all branch from v0.4.1. After merging,
+#31/#32-style roadmap work resumes; also consider the test-corpus gap noted
+in the audit (no real-world Word files exercising ordinals/hyperlinks/
+omitted-ilvl end to end).
 
 **Release decision:** v0.3.0 shipped (native DOCX output + cross-format
 semantic-idempotence contract). No release currently pending.
