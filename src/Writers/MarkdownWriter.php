@@ -431,6 +431,11 @@ final class MarkdownWriter implements WriterInterface
 
     private function renderLink(Link $link): string
     {
+        if (!$this->isSafeLinkHref($link->href())) {
+            // Unsafe scheme: render link text without the anchor
+            return $this->renderInlines($link->children());
+        }
+
         $title = $link->title() === null ? '' : ' "'.$this->escapeTitle($link->title()).'"';
 
         return '['.$this->renderInlines($link->children()).']('
@@ -439,10 +444,47 @@ final class MarkdownWriter implements WriterInterface
 
     private function renderInlineImage(InlineImage $image): string
     {
+        if (!$this->isSafeImageSrc($image->src())) {
+            // Unsafe scheme: render alt text
+            return $this->escapeText($image->alt());
+        }
+
         $title = $image->title() === null ? '' : ' "'.$this->escapeTitle($image->title()).'"';
 
         return '!['.$this->escapeText($image->alt()).']('
             .$this->escapeDestination($image->src()).$title.')';
+    }
+
+    private function isSafeLinkHref(string $href): bool
+    {
+        $scheme = $this->uriScheme($href);
+
+        return $scheme === null
+            || in_array($scheme, ['http', 'https', 'mailto'], true);
+    }
+
+    private function isSafeImageSrc(string $src): bool
+    {
+        $scheme = $this->uriScheme($src);
+
+        if ($scheme === null) {
+            return true;
+        }
+
+        return in_array($scheme, ['http', 'https'], true)
+            || $scheme === 'data' && str_starts_with(strtolower($src), 'data:image/');
+    }
+
+    private function uriScheme(string $uri): ?string
+    {
+        $cleaned = preg_replace('/[\x00-\x20]/', '', $uri) ?? '';
+        $colon = strpos($cleaned, ':');
+
+        if ($colon === false || $colon === 0 || !preg_match('/^[a-zA-Z][a-zA-Z0-9+.\-]*$/', substr($cleaned, 0, $colon))) {
+            return null;
+        }
+
+        return strtolower(substr($cleaned, 0, $colon));
     }
 
     private function escapeText(string $value): string

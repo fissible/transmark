@@ -146,22 +146,31 @@ final class DocxRoundTripTest extends TestCase
         );
     }
 
-    public function test_links_and_inline_code_are_documented_as_visible_text_loss(): void
+    public function test_links_round_trip_without_loss(): void
     {
         $document = new Document([new Paragraph([
             new Text('Visit '),
             new Link('https://example.com', [new Text('Example')], 'Example site'),
-            new Text(' with '),
+            new Text('.'),
+        ])]);
+
+        TreeEquivalence::assertEquivalent($document, $this->roundTrip($document));
+    }
+
+    public function test_inline_code_is_documented_as_plain_text_loss(): void
+    {
+        $document = new Document([new Paragraph([
+            new Text('with '),
             new Code('inline-code'),
         ])]);
 
         TreeEquivalence::assertExpectedLoss(
             $document,
             $this->roundTrip($document),
-            'DocxReader preserves link and code text but does not reconstruct their inline nodes.',
+            'DocxWriter renders inline code as a monospaced run; DocxReader reads it back as plain text.',
             function (Document $actual): void {
                 self::assertCount(1, $actual->content());
-                self::assertSame('Visit Example with inline-code', $this->paragraphText(
+                self::assertSame('with inline-code', $this->paragraphText(
                     $actual->content()[0],
                 ));
                 self::assertContainsOnlyInstancesOf(
