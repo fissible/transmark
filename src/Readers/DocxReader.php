@@ -18,6 +18,7 @@ use Fissible\Transmark\Nodes\Block\TableRow;
 use Fissible\Transmark\Nodes\Inline\Emphasis;
 use Fissible\Transmark\Nodes\Inline\InlineImage;
 use Fissible\Transmark\Nodes\Inline\LineBreak;
+use Fissible\Transmark\Nodes\Inline\Link;
 use Fissible\Transmark\Nodes\Inline\Strike;
 use Fissible\Transmark\Nodes\Inline\Strong;
 use Fissible\Transmark\Nodes\Inline\Subscript;
@@ -54,6 +55,8 @@ final class DocxReader implements ReaderInterface
     private const PACKAGE_RELATIONSHIPS_NAMESPACE = 'http://schemas.openxmlformats.org/package/2006/relationships';
 
     private const IMAGE_RELATIONSHIP_TYPE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image';
+
+    private const HYPERLINK_RELATIONSHIP_TYPE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink';
 
     /** 96 DPI: 914400 EMU per inch / 96 pixels per inch. */
     private const EMU_PER_PIXEL = 9525;
@@ -94,6 +97,7 @@ final class DocxReader implements ReaderInterface
                 $documentXml,
                 $this->parseNumbering($package->part('word/numbering.xml')),
                 $this->resolveImages($package, $package->part('word/_rels/document.xml.rels')),
+                $this->resolveHyperlinks($package->part('word/_rels/document.xml.rels')),
             );
         } finally {
             $package?->close();
@@ -108,13 +112,14 @@ final class DocxReader implements ReaderInterface
         \DOMDocument $documentXml,
         NumberingDefinitions $numbering,
         array $images,
+        array $hyperlinks = [],
     ): Document {
         $body = $documentXml->getElementsByTagNameNS(self::WORD_NAMESPACE, 'body')->item(0);
         if (!$body instanceof \DOMElement) {
             return new Document(numbering: $numbering);
         }
 
-        return new Document($this->parseBodyChildren($body, $images), $numbering);
+        return new Document($this->parseBodyChildren($body, $images, $hyperlinks), $numbering);
     }
 
     /**
@@ -166,11 +171,43 @@ final class DocxReader implements ReaderInterface
     }
 
     /**
+     * Resolves every external hyperlink relationship to its target URI,
+     * keyed by relationship id, so w:hyperlink elements can be turned into
+     * Link nodes during paragraph parsing.
+     *
+     * @return array<string, string> relationship id => target URI
+     */
+    private function resolveHyperlinks(?\DOMDocument $relationshipsXml): array
+    {
+        if ($relationshipsXml === null) {
+            return [];
+        }
+
+        $hyperlinks = [];
+
+        foreach ($relationshipsXml->getElementsByTagNameNS(self::PACKAGE_RELATIONSHIPS_NAMESPACE, 'Relationship') as $relationship) {
+            if (!$relationship instanceof \DOMElement || $relationship->getAttribute('Type') !== self::HYPERLINK_RELATIONSHIP_TYPE) {
+                continue;
+            }
+
+            $id = $relationship->getAttribute('Id');
+            $target = $relationship->getAttribute('Target');
+            if ($id === '' || $target === '') {
+                continue;
+            }
+
+            $hyperlinks[$id] = $target;
+        }
+
+        return $hyperlinks;
+    }
+
+    /**
      * @param array<string, array{path: string, data: string, mimeType: string}> $images
      *
      * @return BlockInterface[]
      */
-    private function parseBodyChildren(\DOMElement $container, array $images): array
+    private function parseBodyChildren(\DOMElement $container, array $images, array $hyperlinks = []): array
     {
         $content = [];
 
@@ -180,7 +217,7 @@ final class DocxReader implements ReaderInterface
             }
 
             if ($child->localName === 'p') {
-                $content[] = $this->parseParagraph($child, $images);
+                $content[] = $this->parseParagraph($child, $images, $hyperlinks);
             } elseif ($child->localName === 'tbl') {
                 $content[] = $this->parseTable($child, $images);
             }
@@ -424,10 +461,10 @@ final class DocxReader implements ReaderInterface
         return new Num((int) $numId, (int) $abstractNumId, $levelOverrides);
     }
 
-    private function parseParagraph(\DOMElement $paragraphElement, array $images): BlockInterface
+    private function parseParagraph(\DOMElement $paragraphElement, array $images, array $hyperlinks = []): BlockInterface
     {
         $properties = $this->directChild($paragraphElement, 'pPr');
-        $inlines = $this->parseInlineContainer($paragraphElement, $images);
+        $inlines = $this->parseInlineContainer($paragraphElement, $images, $hyperlinks);
 
         if ($this->isHorizontalRule($paragraphElement, $properties)) {
             return new HorizontalRule();
@@ -474,10 +511,11 @@ final class DocxReader implements ReaderInterface
 
     /**
      * @param array<string, array{path: string, data: string, mimeType: string}> $images
+     * @param array<string, string> $hyperlinks relationship id => external target URI
      *
      * @return InlineInterface[]
      */
-    private function parseInlineContainer(\DOMElement $container, array $images): array
+    private function parseInlineContainer(\DOMElement $container, array $images, array $hyperlinks = []): array
     {
         $inlines = [];
 
@@ -498,12 +536,52 @@ final class DocxReader implements ReaderInterface
                 continue;
             }
 
-            foreach ($this->parseInlineContainer($child, $images) as $inline) {
+            if ($child->localName === 'hyperlink') {
+                foreach ($this->parseHyperlink($child, $images, $hyperlinks) as $inline) {
+                    $inlines[] = $inline;
+                }
+
+                continue;
+            }
+
+            foreach ($this->parseInlineContainer($child, $images, $hyperlinks) as $inline) {
                 $inlines[] = $inline;
             }
         }
 
         return $inlines;
+    }
+
+    /**
+     * A w:hyperlink carries its destination either as an external
+     * relationship (r:id resolved through word/_rels/document.xml.rels)
+     * or as an internal bookmark (w:anchor). When neither resolves — a
+     * missing relationship part or an unknown id — the wrapped runs fall
+     * back to plain inlines rather than producing a href-less Link.
+     *
+     * @param array<string, array{path: string, data: string, mimeType: string}> $images
+     * @param array<string, string> $hyperlinks
+     *
+     * @return InlineInterface[]
+     */
+    private function parseHyperlink(\DOMElement $element, array $images, array $hyperlinks): array
+    {
+        $children = $this->parseInlineContainer($element, $images, $hyperlinks);
+
+        $relationshipId = $this->relationshipAttributeValue($element, 'id');
+        $anchor = $this->attributeValue($element, 'anchor');
+
+        $href = match (true) {
+            $relationshipId !== null => $hyperlinks[$relationshipId] ?? null,
+            $anchor !== null => '#'.$anchor,
+            default => null,
+        };
+
+        if ($href === null) {
+            return $children;
+        }
+
+        return [new Link($href, $children, $this->attributeValue($element, 'tooltip'))];
     }
 
     /**
@@ -633,6 +711,17 @@ final class DocxReader implements ReaderInterface
         $value = strtolower($this->attributeValue($property, 'val') ?? '');
 
         return !in_array($value, ['0', 'false', 'off', 'none', 'nil'], true);
+    }
+
+    private function relationshipAttributeValue(?\DOMElement $element, string $name): ?string
+    {
+        if ($element === null) {
+            return null;
+        }
+
+        $attribute = $element->getAttributeNodeNS(self::RELATIONSHIPS_ATTR_NAMESPACE, $name);
+
+        return $attribute instanceof \DOMAttr ? $attribute->value : null;
     }
 
     private function attributeValue(?\DOMElement $element, string $name): ?string

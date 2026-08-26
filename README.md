@@ -135,6 +135,7 @@ $html = (new HtmlWriter())->write($document);
 ```
 
 `DocxReader` currently covers paragraphs, headings, core inline formatting,
+hyperlinks (external relationship targets and internal bookmark anchors),
 and Word numbering definitions. See the pre-alpha status above and roadmap for
 unsupported document features.
 
