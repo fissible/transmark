@@ -487,6 +487,10 @@ final class HtmlWriter implements WriterInterface
             ? 'data:'.$mimeType.';base64,'.base64_encode($data)
             : $src;
 
+        if (!$this->isSafeImageSrc($resolvedSrc)) {
+            return '';
+        }
+
         $html = '<img src="'.$this->escape($resolvedSrc).'" alt="'.$this->escape($alt).'"';
 
         if ($title !== null) {
@@ -506,6 +510,12 @@ final class HtmlWriter implements WriterInterface
 
     private function renderLink(Link $link): string
     {
+        if (!$this->isSafeLinkHref($link->href())) {
+            // Unsafe scheme (javascript:, vbscript:, …): render the link
+            // text without the anchor rather than emitting a live URI.
+            return $this->renderInlines($link->children());
+        }
+
         $title = $link->title() === null
             ? ''
             : ' title="'.$this->escape($link->title()).'"';
@@ -513,6 +523,44 @@ final class HtmlWriter implements WriterInterface
         return '<a href="'.$this->escape($link->href()).'"'.$title.'>'
             .$this->renderInlines($link->children())
             .'</a>';
+    }
+
+    /**
+     * Browsers ignore ASCII control characters and whitespace when
+     * resolving a URI scheme ("jav\tascript:" executes), so they are
+     * stripped before the scheme check. A URI with no scheme at all is
+     * relative (or a fragment) and is treated as safe.
+     */
+    private function uriScheme(string $uri): ?string
+    {
+        $cleaned = preg_replace('/[\x00-\x20]/', '', substr($uri, 0, 32)) ?? '';
+        $colon = strpos($cleaned, ':');
+
+        if ($colon === false || $colon === 0 || !preg_match('/^[a-zA-Z][a-zA-Z0-9+.\-]*$/', substr($cleaned, 0, $colon))) {
+            return null;
+        }
+
+        return strtolower(substr($cleaned, 0, $colon));
+    }
+
+    private function isSafeLinkHref(string $href): bool
+    {
+        $scheme = $this->uriScheme($href);
+
+        return $scheme === null
+            || in_array($scheme, ['http', 'https', 'mailto'], true);
+    }
+
+    private function isSafeImageSrc(string $src): bool
+    {
+        $scheme = $this->uriScheme($src);
+
+        if ($scheme === null) {
+            return true;
+        }
+
+        return in_array($scheme, ['http', 'https'], true)
+            || $scheme === 'data' && str_starts_with(strtolower($src), 'data:image/');
     }
 
     private function escape(string $value): string

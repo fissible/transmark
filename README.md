@@ -53,6 +53,14 @@ count as a passing lossy conversion.
 
 ## HTML output conventions
 
+Link hrefs and image sources are scheme-allowlisted so untrusted documents
+cannot smuggle script URIs into generated HTML: only `http`, `https`, and
+`mailto` links render as anchors (anything else renders its link text
+without the `<a>` wrapper), and images accept `http`, `https`, relative
+paths, and embedded `data:image/` URIs. Scheme checks ignore control
+characters and whitespace the way browsers do when resolving a URI, so
+obfuscations like `java\tscript:` cannot slip through.
+
 Simple lists render as native nested `<ol>`/`<ul>` elements. Legal-outline
 numbering renders as flat paragraphs because HTML cannot express labels that
 concatenate counters across levels. Those paragraphs use
