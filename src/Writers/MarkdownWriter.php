@@ -82,7 +82,7 @@ final class MarkdownWriter implements WriterInterface
                     ++$index;
                 }
 
-                $rendered[] = $this->renderSimpleNumberedParagraphs($paragraphs, $document);
+                $rendered[] = $this->renderSimpleNumberedParagraphs($paragraphs, $document, $labels);
                 --$index;
 
                 continue;
@@ -157,10 +157,12 @@ final class MarkdownWriter implements WriterInterface
     /**
      * @param Paragraph[] $paragraphs
      */
-    private function renderSimpleNumberedParagraphs(array $paragraphs, Document $document): string
-    {
+    private function renderSimpleNumberedParagraphs(
+        array $paragraphs,
+        Document $document,
+        NumberingLabelMap $labels,
+    ): string {
         $lines = [];
-        $counters = [];
         $baseIlvl = [];
         $previousNumId = null;
         $previousIlvl = null;
@@ -191,17 +193,11 @@ final class MarkdownWriter implements WriterInterface
             if ($level?->format() === NumberFormat::Bullet) {
                 $marker = '-';
             } else {
-                $num = $document->numbering()->num($numId);
-                $levelOverrides = $num?->levelOverrides() ?? [];
-                $start = $levelOverrides[$ilvl] ?? $level?->start() ?? 1;
-                $counters[$numId][$ilvl] = ($counters[$numId][$ilvl] ?? $start - 1) + 1;
-                $marker = $counters[$numId][$ilvl].'.';
-            }
-
-            foreach (array_keys($counters[$numId] ?? []) as $deeperIlvl) {
-                if ($deeperIlvl > $ilvl) {
-                    unset($counters[$numId][$deeperIlvl]);
-                }
+                // Literal markers come from the shared engine counters, so a
+                // run interrupted by non-list content continues Word's count
+                // instead of restarting at 1.
+                $counter = $labels->counterFor($paragraph) ?? 1;
+                $marker = $counter.'.';
             }
 
             $lines[] = str_repeat(' ', $relativeIlvl * 4)
