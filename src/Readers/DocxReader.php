@@ -355,7 +355,13 @@ final class DocxReader implements ReaderInterface
             if ($child->localName === 'start' && $value !== null) {
                 $start = (int) $value;
             } elseif ($child->localName === 'numFmt' && $value !== null) {
-                $format = NumberFormat::from($value);
+                // Formats outside the supported set (ordinal, chicago, hex, …)
+                // degrade to decimal rendering instead of aborting the read.
+                try {
+                    $format = NumberFormat::from($value);
+                } catch (\ValueError) {
+                    $format = NumberFormat::Decimal;
+                }
             } elseif ($child->localName === 'lvlText' && $value !== null) {
                 $lvlText = $value;
             } elseif ($child->localName === 'isLgl') {
