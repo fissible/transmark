@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/).
+## [0.4.2] - 2026-08-26
+
+### Changed
+- Dedupe relationships with an O(n) foreach; correct rPr order comment
+
+### Fixed
+- Emit rPr children in CT_RPr schema order and dedupe relationships
+- UriScheme strips control chars before truncation + XSS hardening (DocxWriter)
+- Strike before u in rPr order; add tests for strike/u order and relationship dedupe
+- Continue simple-list counters across non-list interruptions
+- UriScheme strips control chars before truncation + XSS hardening (MarkdownWriter)
+- Map markdown soft line breaks to a space instead of a hard break
+- Emit legal outlines flat in Markdown to avoid indented-code-block parsing
+- Scheme-allowlist link hrefs and image sources in HtmlWriter
+- UriScheme strips control chars before truncation (MarkdownWriter)
+- Preserve hyperlinks when reading DOCX
+- Thread hyperlinks through table parsing; fix anchor fallback, TargetMode, table-cell hyperlinks; add tests
+- Default an omitted w:ilvl in numPr to level 0
+- NumId=0 cancels numbering (ECMA-376 §17.9.18) + test
+- Degrade unsupported w:numFmt values to decimal instead of aborting the read
 ## [0.4.1] - 2026-08-10
 
 ### Fixed
