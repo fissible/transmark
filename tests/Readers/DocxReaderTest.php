@@ -503,6 +503,58 @@ final class DocxReaderTest extends TestCase
         self::assertSame([], $document->content());
     }
 
+    public function test_an_sdt_wrapping_a_table_row_reads_the_row(): void
+    {
+        $document = $this->readBody(
+            '<w:tbl>'
+            .'<w:sdt><w:sdtContent><w:tr><w:tc><w:p><w:r><w:t>controlled</w:t></w:r></w:p></w:tc></w:tr></w:sdtContent></w:sdt>'
+            .'<w:tr><w:tc><w:p><w:r><w:t>plain</w:t></w:r></w:p></w:tc></w:tr>'
+            .'</w:tbl>',
+        );
+
+        $table = $document->content()[0];
+        self::assertInstanceOf(Table::class, $table);
+        self::assertCount(2, $table->rows());
+        self::assertSame('controlled', $this->cellText($table->rows()[0]->cells()[0]));
+        self::assertSame('plain', $this->cellText($table->rows()[1]->cells()[0]));
+    }
+
+    public function test_an_sdt_wrapping_a_table_cell_reads_the_cell(): void
+    {
+        $document = $this->readBody(
+            '<w:tbl><w:tr>'
+            .'<w:sdt><w:sdtContent><w:tc><w:p><w:r><w:t>controlled</w:t></w:r></w:p></w:tc></w:sdtContent></w:sdt>'
+            .'<w:tc><w:p><w:r><w:t>plain</w:t></w:r></w:p></w:tc>'
+            .'</w:tr></w:tbl>',
+        );
+
+        $table = $document->content()[0];
+        self::assertInstanceOf(Table::class, $table);
+        self::assertCount(1, $table->rows());
+        self::assertCount(2, $table->rows()[0]->cells());
+        self::assertSame('controlled', $this->cellText($table->rows()[0]->cells()[0]));
+        self::assertSame('plain', $this->cellText($table->rows()[0]->cells()[1]));
+    }
+
+    public function test_a_header_row_inside_an_sdt_still_becomes_the_table_header(): void
+    {
+        $document = $this->readBody(
+            '<w:tbl>'
+            .'<w:sdt><w:sdtContent><w:tr><w:trPr><w:tblHeader/></w:trPr>'
+            .'<w:tc><w:p><w:r><w:t>Head</w:t></w:r></w:p></w:tc></w:tr></w:sdtContent></w:sdt>'
+            .'<w:tr><w:tc><w:p><w:r><w:t>Body</w:t></w:r></w:p></w:tc></w:tr>'
+            .'</w:tbl>',
+        );
+
+        $table = $document->content()[0];
+        self::assertInstanceOf(Table::class, $table);
+        self::assertNotNull($table->header());
+        self::assertSame('Head', $this->cellText($table->header()->cells()[0]));
+        self::assertCount(1, $table->rows());
+        self::assertSame('Body', $this->cellText($table->rows()[0]->cells()[0]));
+    }
+
+
     /**
      * @param array<string, string> $relationships rId => Target (relative to word/)
      * @param array<string, string> $mediaParts    full package part path => raw bytes

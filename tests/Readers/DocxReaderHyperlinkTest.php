@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Fissible\Transmark\Tests\Readers;
 
 use Fissible\Transmark\Nodes\Inline\Link;
+use Fissible\Transmark\Nodes\Inline\Strong;
 use Fissible\Transmark\Nodes\Inline\Text;
 use Fissible\Transmark\Readers\DocxReader;
 use Fissible\Transmark\Writers\HtmlWriter;
@@ -385,6 +386,71 @@ final class DocxReaderHyperlinkTest extends TestCase
             '<p><a href="https://example.com/">a link</a></p>',
             (new HtmlWriter())->write($document),
         );
+    }
+
+    public function test_a_simple_field_hyperlink_becomes_a_link(): void
+    {
+        $paragraph = $this->readParagraph(
+            '<w:fldSimple w:instr=" HYPERLINK &quot;https://example.com&quot; ">'
+            .'<w:r><w:t>click</w:t></w:r></w:fldSimple>',
+            [],
+        );
+
+        self::assertCount(1, $paragraph);
+        self::assertInstanceOf(Link::class, $paragraph[0]);
+        self::assertSame('https://example.com', $paragraph[0]->href());
+        self::assertSame('click', $this->linkText($paragraph[0]));
+    }
+
+    public function test_a_simple_field_hyperlink_skips_switches_and_keeps_the_url(): void
+    {
+        $paragraph = $this->readParagraph(
+            '<w:fldSimple w:instr=" HYPERLINK \o &quot;tip&quot; &quot;https://example.com&quot; ">'
+            .'<w:r><w:t>go</w:t></w:r></w:fldSimple>',
+            [],
+        );
+
+        self::assertCount(1, $paragraph);
+        self::assertInstanceOf(Link::class, $paragraph[0]);
+        self::assertSame('https://example.com', $paragraph[0]->href());
+    }
+
+    public function test_a_simple_field_hyperlink_to_a_bookmark_uses_a_fragment_href(): void
+    {
+        $paragraph = $this->readParagraph(
+            '<w:fldSimple w:instr=" HYPERLINK \l &quot;Sec2&quot; ">'
+            .'<w:r><w:t>jump</w:t></w:r></w:fldSimple>',
+            [],
+        );
+
+        self::assertCount(1, $paragraph);
+        self::assertInstanceOf(Link::class, $paragraph[0]);
+        self::assertSame('#Sec2', $paragraph[0]->href());
+    }
+
+    public function test_a_non_hyperlink_simple_field_keeps_its_result_as_text(): void
+    {
+        $paragraph = $this->readParagraph(
+            '<w:fldSimple w:instr=" PAGE "><w:r><w:t>7</w:t></w:r></w:fldSimple>',
+            [],
+        );
+
+        self::assertCount(1, $paragraph);
+        self::assertInstanceOf(Text::class, $paragraph[0]);
+        self::assertSame('7', $paragraph[0]->content());
+    }
+
+    public function test_a_simple_field_hyperlink_keeps_run_formatting_inside_the_link(): void
+    {
+        $paragraph = $this->readParagraph(
+            '<w:fldSimple w:instr=" HYPERLINK &quot;https://example.com&quot; ">'
+            .'<w:r><w:rPr><w:b/></w:rPr><w:t>bold</w:t></w:r></w:fldSimple>',
+            [],
+        );
+
+        self::assertCount(1, $paragraph);
+        self::assertInstanceOf(Link::class, $paragraph[0]);
+        self::assertInstanceOf(Strong::class, $paragraph[0]->children()[0]);
     }
 
     /**
