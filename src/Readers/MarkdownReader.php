@@ -24,6 +24,7 @@ use Fissible\Transmark\Nodes\Inline\Emphasis;
 use Fissible\Transmark\Nodes\Inline\InlineImage;
 use Fissible\Transmark\Nodes\Inline\LineBreak;
 use Fissible\Transmark\Nodes\Inline\Link;
+use Fissible\Transmark\Nodes\Inline\RawHtml;
 use Fissible\Transmark\Nodes\Inline\Strike;
 use Fissible\Transmark\Nodes\Inline\Strong;
 use Fissible\Transmark\Nodes\Inline\Text;
@@ -32,12 +33,14 @@ use League\CommonMark\Extension\CommonMark\CommonMarkCoreExtension;
 use League\CommonMark\Extension\CommonMark\Node\Block\BlockQuote as CommonMarkBlockQuote;
 use League\CommonMark\Extension\CommonMark\Node\Block\FencedCode;
 use League\CommonMark\Extension\CommonMark\Node\Block\Heading as CommonMarkHeading;
+use League\CommonMark\Extension\CommonMark\Node\Block\HtmlBlock;
 use League\CommonMark\Extension\CommonMark\Node\Block\IndentedCode;
 use League\CommonMark\Extension\CommonMark\Node\Block\ListBlock;
 use League\CommonMark\Extension\CommonMark\Node\Block\ListItem as CommonMarkListItem;
 use League\CommonMark\Extension\CommonMark\Node\Block\ThematicBreak;
 use League\CommonMark\Extension\CommonMark\Node\Inline\Code as CommonMarkCode;
 use League\CommonMark\Extension\CommonMark\Node\Inline\Emphasis as CommonMarkEmphasis;
+use League\CommonMark\Extension\CommonMark\Node\Inline\HtmlInline;
 use League\CommonMark\Extension\CommonMark\Node\Inline\Image as CommonMarkImage;
 use League\CommonMark\Extension\CommonMark\Node\Inline\Link as CommonMarkLink;
 use League\CommonMark\Extension\CommonMark\Node\Inline\Strong as CommonMarkStrong;
@@ -98,6 +101,10 @@ final class MarkdownReader implements ReaderInterface
             $node instanceof IndentedCode => new CodeBlock($node->getLiteral()),
             $node instanceof ThematicBreak => new HorizontalRule(),
             $node instanceof CommonMarkTable => $this->mapTable($node),
+            // Raw HTML has no first-class node of its own: wrap the literal
+            // in a RawHtml inline so it survives a read -> write round-trip
+            // instead of being silently dropped.
+            $node instanceof HtmlBlock => new Paragraph([new RawHtml($node->getLiteral())]),
             default => null,
         };
     }
@@ -223,6 +230,7 @@ final class MarkdownReader implements ReaderInterface
                 $node->getTitle(),
             ),
             $node instanceof CommonMarkCode => new Code($node->getLiteral()),
+            $node instanceof HtmlInline => new RawHtml($node->getLiteral()),
             $node instanceof Newline => $node->getType() === Newline::HARDBREAK
                 ? new LineBreak()
                 : new Text(' '),

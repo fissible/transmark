@@ -27,6 +27,7 @@ use Fissible\Transmark\Nodes\Inline\Footnote;
 use Fissible\Transmark\Nodes\Inline\InlineImage;
 use Fissible\Transmark\Nodes\Inline\LineBreak;
 use Fissible\Transmark\Nodes\Inline\Link;
+use Fissible\Transmark\Nodes\Inline\RawHtml;
 use Fissible\Transmark\Nodes\Inline\Strike;
 use Fissible\Transmark\Nodes\Inline\Strong;
 use Fissible\Transmark\Nodes\Inline\Subscript;
@@ -136,6 +137,7 @@ final class TreeEquivalence
             $node instanceof Superscript,
             $node instanceof Subscript => ['children' => self::inlines($node->children())],
             $node instanceof Code => ['content' => $node->content()],
+            $node instanceof RawHtml => ['content' => $node->content()],
             $node instanceof Link => [
                 'href' => $node->href(),
                 'title' => $node->title(),

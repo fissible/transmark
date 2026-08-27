@@ -24,6 +24,7 @@ use Fissible\Transmark\Nodes\Inline\Emphasis;
 use Fissible\Transmark\Nodes\Inline\InlineImage;
 use Fissible\Transmark\Nodes\Inline\LineBreak;
 use Fissible\Transmark\Nodes\Inline\Link;
+use Fissible\Transmark\Nodes\Inline\RawHtml;
 use Fissible\Transmark\Nodes\Inline\Strike;
 use Fissible\Transmark\Nodes\Inline\Strong;
 use Fissible\Transmark\Nodes\Inline\Subscript;
@@ -425,6 +426,7 @@ final class MarkdownWriter implements WriterInterface
             $inline instanceof Code => $this->renderCode($inline),
             $inline instanceof Link => $this->renderLink($inline),
             $inline instanceof InlineImage => $this->renderInlineImage($inline),
+            $inline instanceof RawHtml => $inline->content(),
             $inline instanceof LineBreak => "  \n",
             default => '',
         };
