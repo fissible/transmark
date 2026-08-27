@@ -180,6 +180,58 @@ final class MarkdownWriterTest extends TestCase
         );
     }
 
+    public function test_paragraph_text_starting_with_a_bullet_marker_is_escaped(): void
+    {
+        $document = new Document([
+            $this->paragraph('- foo'),
+            $this->paragraph('+ foo'),
+        ]);
+
+        self::assertSame(
+            "\\- foo\n\n\\+ foo\n",
+            (new MarkdownWriter())->write($document),
+        );
+    }
+
+    public function test_paragraph_text_starting_with_an_ordered_marker_is_escaped(): void
+    {
+        $document = new Document([
+            $this->paragraph('1. foo'),
+            $this->paragraph('10) foo'),
+        ]);
+
+        self::assertSame(
+            "1\\. foo\n\n10\\) foo\n",
+            (new MarkdownWriter())->write($document),
+        );
+    }
+
+    public function test_paragraph_text_starting_with_a_marker_round_trips_as_a_paragraph(): void
+    {
+        $reader = new MarkdownReader();
+
+        $document = $reader->read((new MarkdownWriter())->write(
+            new Document([$this->paragraph('- foo')]),
+        ));
+
+        self::assertCount(1, $document->content());
+        self::assertInstanceOf(Paragraph::class, $document->content()[0]);
+    }
+
+    public function test_marker_guard_leaves_normal_text_untouched(): void
+    {
+        $document = new Document([
+            $this->paragraph('3.14 is pi'),
+            $this->paragraph('well-known fact'),
+            $this->paragraph('-foo'),
+        ]);
+
+        self::assertSame(
+            "3.14 is pi\n\nwell-known fact\n\n-foo\n",
+            (new MarkdownWriter())->write($document),
+        );
+    }
+
     public function test_heading_level_maps_to_correct_hash_prefix(): void
     {
         $document = new Document([new Heading(3, [new Text('Terms')])]);
