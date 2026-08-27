@@ -33,6 +33,43 @@ final class HtmlReaderTest extends TestCase
         self::assertSame('Hello world', $inlines[0]->content());
     }
 
+    public function test_reads_id_and_class_from_headings(): void
+    {
+        $heading = $this->read('<h2 id="scope" class="section title">Scope</h2>')->content()[0];
+
+        self::assertSame('scope', $heading->attributes()->id());
+        self::assertSame(['section', 'title'], $heading->attributes()->classes());
+    }
+
+    public function test_reads_id_and_class_from_paragraphs(): void
+    {
+        $paragraph = $this->read('<p id="intro" class="lead">Hello</p>')->content()[0];
+
+        self::assertSame('intro', $paragraph->attributes()->id());
+        self::assertSame(['lead'], $paragraph->attributes()->classes());
+    }
+
+    public function test_reads_id_and_class_from_inline_wrappers(): void
+    {
+        $document = $this->read(
+            '<p>a <a id="l1" class="btn" href="https://example.com">link</a> <code class="lang-php">x</code> <b class="hi">b</b></p>',
+        );
+        $inlines = $document->content()[0]->inlines();
+
+        self::assertSame('l1', $inlines[1]->attributes()->id());
+        self::assertSame(['btn'], $inlines[1]->attributes()->classes());
+        self::assertSame(['lang-php'], $inlines[3]->attributes()->classes());
+        self::assertSame(['hi'], $inlines[5]->attributes()->classes());
+    }
+
+    public function test_elements_without_id_or_class_carry_empty_attributes(): void
+    {
+        $paragraph = $this->read('<p>plain</p>')->content()[0];
+
+        self::assertNull($paragraph->attributes()->id());
+        self::assertSame([], $paragraph->attributes()->classes());
+    }
+
     public function test_pretty_printed_paragraph_content_is_edge_trimmed(): void
     {
         $document = $this->read("<body><p>\n  Hello\n</p></body>");
