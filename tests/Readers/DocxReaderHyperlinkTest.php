@@ -142,6 +142,108 @@ final class DocxReaderHyperlinkTest extends TestCase
         self::assertSame('click', $link->children()[0]->content());
     }
 
+    public function test_field_based_hyperlink_with_screentip_switch_keeps_the_real_url(): void
+    {
+        $paragraph = $this->readParagraph(
+            '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+            .'<w:r><w:instrText> HYPERLINK \o "My Tooltip" "https://example.com/page" </w:instrText></w:r>'
+            .'<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+            .'<w:r><w:t>click</w:t></w:r>'
+            .'<w:r><w:fldChar w:fldCharType="end"/></w:r>',
+            [],
+        );
+
+        self::assertInstanceOf(Link::class, $paragraph[0]);
+        self::assertSame('https://example.com/page', $paragraph[0]->href());
+    }
+
+    public function test_field_based_hyperlink_with_target_frame_switch_keeps_the_real_url(): void
+    {
+        $paragraph = $this->readParagraph(
+            '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+            .'<w:r><w:instrText> HYPERLINK \t "_blank" "https://example.com/page" </w:instrText></w:r>'
+            .'<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+            .'<w:r><w:t>click</w:t></w:r>'
+            .'<w:r><w:fldChar w:fldCharType="end"/></w:r>',
+            [],
+        );
+
+        self::assertInstanceOf(Link::class, $paragraph[0]);
+        self::assertSame('https://example.com/page', $paragraph[0]->href());
+    }
+
+    public function test_field_based_hyperlink_with_unquoted_bookmark_uses_a_fragment_href(): void
+    {
+        $paragraph = $this->readParagraph(
+            '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+            .'<w:r><w:instrText> HYPERLINK \l Bookmark1 </w:instrText></w:r>'
+            .'<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+            .'<w:r><w:t>jump</w:t></w:r>'
+            .'<w:r><w:fldChar w:fldCharType="end"/></w:r>',
+            [],
+        );
+
+        self::assertInstanceOf(Link::class, $paragraph[0]);
+        self::assertSame('#Bookmark1', $paragraph[0]->href());
+    }
+
+    public function test_field_based_hyperlink_with_multiple_switches_and_a_bookmark(): void
+    {
+        $paragraph = $this->readParagraph(
+            '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+            .'<w:r><w:instrText> HYPERLINK \o "tip" \l "Book" \t "_blank" </w:instrText></w:r>'
+            .'<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+            .'<w:r><w:t>jump</w:t></w:r>'
+            .'<w:r><w:fldChar w:fldCharType="end"/></w:r>',
+            [],
+        );
+
+        self::assertInstanceOf(Link::class, $paragraph[0]);
+        self::assertSame('#Book', $paragraph[0]->href());
+    }
+
+    public function test_a_nested_field_inside_a_hyperlink_field_keeps_all_text_in_one_link(): void
+    {
+        $paragraph = $this->readParagraph(
+            '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+            .'<w:r><w:instrText> HYPERLINK "https://outer.com" </w:instrText></w:r>'
+            .'<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+            .'<w:r><w:t>page </w:t></w:r>'
+            .'<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+            .'<w:r><w:instrText> PAGE </w:instrText></w:r>'
+            .'<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+            .'<w:r><w:t>7</w:t></w:r>'
+            .'<w:r><w:fldChar w:fldCharType="end"/></w:r>'
+            .'<w:r><w:t> tail</w:t></w:r>'
+            .'<w:r><w:fldChar w:fldCharType="end"/></w:r>',
+            [],
+        );
+
+        self::assertCount(1, $paragraph);
+        $link = $paragraph[0];
+        self::assertInstanceOf(Link::class, $link);
+        self::assertSame('https://outer.com', $link->href());
+        self::assertSame('page 7 tail', $this->linkText($link));
+    }
+
+    public function test_a_run_mixing_a_field_event_and_content_keeps_the_content(): void
+    {
+        $paragraph = $this->readParagraph(
+            '<w:r><w:fldChar w:fldCharType="begin"/><w:t>lead</w:t></w:r>'
+            .'<w:r><w:instrText> HYPERLINK "https://example.com" </w:instrText></w:r>'
+            .'<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+            .'<w:r><w:t>click</w:t></w:r>'
+            .'<w:r><w:fldChar w:fldCharType="end"/></w:r>',
+            [],
+        );
+
+        self::assertCount(2, $paragraph);
+        self::assertInstanceOf(Text::class, $paragraph[0]);
+        self::assertSame('lead', $paragraph[0]->content());
+        self::assertInstanceOf(Link::class, $paragraph[1]);
+        self::assertSame('click', $this->linkText($paragraph[1]));
+    }
+
     public function test_field_based_hyperlink_with_anchor_uses_fragment_href(): void
     {
         $paragraph = $this->readParagraph(
@@ -244,6 +346,18 @@ final class DocxReaderHyperlinkTest extends TestCase
         return (new DocxReader())->read($this->docx($hyperlinkXml, $relationships))
             ->content()[0]
             ->inlines();
+    }
+
+    private function linkText(Link $link): string
+    {
+        $text = '';
+        foreach ($link->children() as $child) {
+            if ($child instanceof Text) {
+                $text .= $child->content();
+            }
+        }
+
+        return $text;
     }
 
     /**

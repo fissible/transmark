@@ -152,28 +152,79 @@ final class MarkdownWriter implements WriterInterface
             return $prefix.$this->renderInlines($paragraph->inlines());
         }
 
-        return $this->escapeLeadingListMarker($this->renderInlines($paragraph->inlines()));
+        return $this->escapeLeadingBlockSyntax($this->renderInlines($paragraph->inlines()));
+    }
+
+    /**
+     * Guards a rendered paragraph against re-parsing as a different block
+     * type:
+     *
+     * - a first line indented 4+ columns (a leading tab, four or more
+     *   spaces, or a mix) would read as an indented code block — markdown
+     *   cannot represent line-initial indentation inside a paragraph, so the
+     *   indenting run is normalized to at most three spaces;
+     * - any line starting with 0-3 spaces plus a list marker would read as
+     *   a list (lists interrupt paragraphs, so this applies per line).
+     */
+    private function escapeLeadingBlockSyntax(string $rendered): string
+    {
+        $lines = explode("\n", $rendered);
+
+        if (preg_match('/^[ \t]+/', $lines[0], $matches) === 1 && $this->indentationWidth($matches[0]) >= 4) {
+            $lines[0] = str_repeat(' ', 3).substr($lines[0], strlen($matches[0]));
+        }
+
+        return implode("\n", array_map(
+            fn (string $line): string => $this->escapeLeadingMarkerOnLine($line),
+            $lines,
+        ));
     }
 
     /**
      * A paragraph whose text begins with a CommonMark list marker ("- foo",
-     * "+ foo", "1. foo") would re-parse as a ListNode on the next read. Escape
-     * just the marker character(s) at the line start — normal text like
+     * "+ foo", "1. foo") — with up to three leading spaces, which still parse
+     * as a marker — would re-parse as a ListNode on the next read. Escape
+     * just the marker character(s) at the line start; normal text like
      * "3.14" or "well-known" must stay untouched. The dot of an ordered
      * marker is what gets escaped ("1\."), since "\1" would render a literal
      * backslash.
      */
     private function escapeLeadingListMarker(string $text): string
     {
-        if (preg_match('/^([-+*])(?=\s|$)/', $text, $matches) === 1) {
-            return '\\'.$matches[1].substr($text, 1);
+        return implode("\n", array_map(
+            fn (string $line): string => $this->escapeLeadingMarkerOnLine($line),
+            explode("\n", $text),
+        ));
+    }
+
+    private function escapeLeadingMarkerOnLine(string $line): string
+    {
+        if (preg_match('/^( {0,3})([-+*])(?=\s|$)/', $line, $matches) === 1) {
+            return $matches[1].'\\'.$matches[2].substr($line, strlen($matches[1]) + 1);
         }
 
-        if (preg_match('/^(\d{1,9})([.)])(?=\s|$)/', $text, $matches) === 1) {
-            return $matches[1].'\\'.$matches[2].substr($text, strlen($matches[1]) + 1);
+        if (preg_match('/^( {0,3})(\d{1,9})([.)])(?=\s|$)/', $line, $matches) === 1) {
+            return $matches[1].$matches[2].'\\'.$matches[3]
+                .substr($line, strlen($matches[1]) + strlen($matches[2]) + 1);
         }
 
-        return $text;
+        return $line;
+    }
+
+    /**
+     * Width of a leading whitespace run in CommonMark columns: a tab advances
+     * to the next 4-column tab stop, the same rule block-structure detection
+     * uses.
+     */
+    private function indentationWidth(string $whitespace): int
+    {
+        $width = 0;
+
+        foreach (str_split($whitespace) as $char) {
+            $width = $char === ' ' ? $width + 1 : (intdiv($width, 4) + 1) * 4;
+        }
+
+        return $width;
     }
 
     /**
@@ -493,7 +544,10 @@ final class MarkdownWriter implements WriterInterface
         if (
             preg_match('/^\s/', $content) === 1
             && preg_match('/\s$/', $content) === 1
-            && trim($content) !== ''
+            // CommonMark's all-space exemption is space-only: a content like
+            // " \t " must not be treated as all-space (trim() would strip
+            // the tab too) or its edge spaces get trimmed on re-read.
+            && trim($content, ' ') !== ''
         ) {
             return ' ';
         }

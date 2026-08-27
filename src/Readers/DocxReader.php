@@ -567,12 +567,18 @@ final class DocxReader implements ReaderInterface
     private function parseInlineContainer(\DOMElement $container, array $images, array $hyperlinks = []): array
     {
         $inlines = [];
-        /** @var string|null $fieldInstruction accumulated w:instrText of the open field */
-        $fieldInstruction = null;
-        /** @var string|null $pendingHyperlink href of a HYPERLINK field between separate and end */
-        $pendingHyperlink = null;
-        /** @var InlineInterface[] $fieldResult runs buffered between separate and end */
-        $fieldResult = [];
+        /**
+         * Field state is a stack because fields nest (e.g. a PAGE field inside
+         * a HYPERLINK field). Each frame accumulates its instruction text and
+         * its result runs; on end, a HYPERLINK frame wraps its result in a
+         * Link, and everything is appended to the parent frame when one is
+         * open. `separated` distinguishes the instruction region (content
+         * before w:fldChar separate stays outside the field) from the result
+         * region (content after separate is the field's output).
+         *
+         * @var array<int, array{instruction: ?string, pendingHyperlink: ?string, separated: bool, result: InlineInterface[]}> $fieldStack
+         */
+        $fieldStack = [];
 
         foreach ($container->childNodes as $child) {
             if (!$child instanceof \DOMElement || $child->namespaceURI !== self::WORD_NAMESPACE) {
@@ -586,32 +592,41 @@ final class DocxReader implements ReaderInterface
                     [$eventName, $payload] = $event;
 
                     if ($eventName === 'begin') {
-                        $fieldInstruction = '';
-                        $pendingHyperlink = null;
-                        $fieldResult = [];
+                        $fieldStack[] = ['instruction' => '', 'pendingHyperlink' => null, 'separated' => false, 'result' => []];
                     } elseif ($eventName === 'instrText') {
-                        if ($fieldInstruction !== null) {
-                            $fieldInstruction .= $payload;
+                        if ($fieldStack !== []) {
+                            $top = array_key_last($fieldStack);
+                            if ($fieldStack[$top]['instruction'] !== null) {
+                                $fieldStack[$top]['instruction'] .= $payload;
+                            }
                         }
                     } elseif ($eventName === 'separate') {
-                        $pendingHyperlink = $this->hyperlinkFromFieldInstruction($fieldInstruction);
-                        $fieldInstruction = null;
+                        if ($fieldStack !== []) {
+                            $top = array_key_last($fieldStack);
+                            $fieldStack[$top]['pendingHyperlink'] = $this->hyperlinkFromFieldInstruction($fieldStack[$top]['instruction']);
+                            $fieldStack[$top]['instruction'] = null;
+                            $fieldStack[$top]['separated'] = true;
+                        }
                     } elseif ($eventName === 'end') {
-                        array_push($inlines, ...$this->flushField($pendingHyperlink, $fieldResult));
-                        $fieldInstruction = null;
-                        $pendingHyperlink = null;
-                        $fieldResult = [];
+                        $frame = array_pop($fieldStack);
+                        if ($frame !== null) {
+                            $this->appendFieldResult($inlines, $fieldStack, $this->flushField($frame['pendingHyperlink'], $frame['result']));
+                        }
                     }
-
-                    continue;
                 }
 
+                // A run can carry a field event AND ordinary content
+                // (w:t/w:br/w:drawing); never discard the content half. It
+                // lands in the innermost separated field's result region, or
+                // in the paragraph when no result region is open.
                 $runInlines = $this->parseRun($child, $images);
-
-                if ($pendingHyperlink !== null) {
-                    array_push($fieldResult, ...$runInlines);
-                } else {
-                    array_push($inlines, ...$runInlines);
+                if ($runInlines !== []) {
+                    $top = $fieldStack === [] ? null : array_key_last($fieldStack);
+                    if ($top !== null && $fieldStack[$top]['separated']) {
+                        $fieldStack[$top]['result'] = [...$fieldStack[$top]['result'], ...$runInlines];
+                    } else {
+                        array_push($inlines, ...$runInlines);
+                    }
                 }
 
                 continue;
@@ -634,10 +649,38 @@ final class DocxReader implements ReaderInterface
             }
         }
 
-        // A field that never closed (malformed source) must not lose its result runs.
-        array_push($inlines, ...$this->flushField($pendingHyperlink, $fieldResult));
+        // Fields that never closed (malformed source) must not lose their
+        // result runs; resolve from the innermost out.
+        while ($fieldStack !== []) {
+            $frame = array_pop($fieldStack);
+            $this->appendFieldResult($inlines, $fieldStack, $this->flushField($frame['pendingHyperlink'], $frame['result']));
+        }
 
         return $inlines;
+    }
+
+    /**
+     * Appends emitted inlines either to the innermost open field's result
+     * buffer or, when no field is open, straight to the paragraph's inlines.
+     *
+     * @param InlineInterface[]                                                                                        $inlines
+     * @param array<int, array{instruction: ?string, pendingHyperlink: ?string, separated: bool, result: InlineInterface[]}> $fieldStack
+     * @param InlineInterface[]                                                                                        $emitted
+     */
+    private function appendFieldResult(array &$inlines, array &$fieldStack, array $emitted): void
+    {
+        if ($emitted === []) {
+            return;
+        }
+
+        if ($fieldStack === []) {
+            array_push($inlines, ...$emitted);
+
+            return;
+        }
+
+        $top = array_key_last($fieldStack);
+        $fieldStack[$top]['result'] = [...$fieldStack[$top]['result'], ...$emitted];
     }
 
     /**
@@ -671,10 +714,17 @@ final class DocxReader implements ReaderInterface
     }
 
     /**
-     * Extracts the target from a field instruction like
-     * ` HYPERLINK "https://example.com" ` or ` HYPERLINK \l "Bookmark" `.
-     * Returns null for any other field (PAGE, TOC, ...) so the result runs
-     * keep their cached text but gain no link wrapper.
+     * Extracts the target from a field instruction. Word emits the
+     * destination after optional switches that must not be mistaken for it:
+     *
+     *   HYPERLINK "https://example.com" \o "tip"
+     *   HYPERLINK \o "tip" "https://example.com" \t "_blank"
+     *   HYPERLINK \l "Bookmark"          (or: HYPERLINK \l Bookmark1)
+     *
+     * \l is an internal bookmark (quoted or bare); \o (screentip) and \t
+     * (target frame) take a quoted argument that is skipped. Returns null
+     * for any other field (PAGE, TOC, ...) so the result runs keep their
+     * cached text but gain no link wrapper.
      */
     private function hyperlinkFromFieldInstruction(?string $instruction): ?string
     {
@@ -682,19 +732,60 @@ final class DocxReader implements ReaderInterface
             return null;
         }
 
-        if (preg_match('/HYPERLINK\s+\\\\l\s+(["\'])(.*?)\1/i', $instruction, $matches) === 1) {
-            return '#'.$matches[2];
+        // Tokenize: switches (\x), whole quoted strings, bare words. A quoted
+        // string stays one token, so a \l inside a screentip is never read as
+        // a switch and a destination containing spaces survives intact.
+        preg_match_all('/\\\\.|"[^"]*"|\S+/', $instruction, $matches);
+        $tokens = $matches[0] ?? [];
+
+        $start = null;
+        foreach ($tokens as $index => $token) {
+            if (strcasecmp($token, 'HYPERLINK') === 0) {
+                $start = $index + 1;
+                break;
+            }
         }
 
-        if (preg_match('/HYPERLINK\s+(["\'])(.*?)\1/i', $instruction, $matches) === 1) {
-            return $matches[2];
+        if ($start === null) {
+            return null;
         }
 
-        if (preg_match('/HYPERLINK\s+([^\s"\']+)/i', $instruction, $matches) === 1) {
-            return $matches[1];
+        $bookmark = null;
+        $url = null;
+
+        for ($i = $start, $count = count($tokens); $i < $count; ++$i) {
+            $token = $tokens[$i];
+
+            if (str_starts_with($token, '\\')) {
+                $switch = strtolower(substr($token, 1));
+
+                if ($switch === 'l') {
+                    $argument = $tokens[$i + 1] ?? null;
+                    if ($argument !== null) {
+                        $bookmark = trim($argument, '"');
+                        ++$i;
+                    }
+                } elseif (in_array($switch, ['o', 't'], true)) {
+                    // \o (screentip) and \t (target frame) take a quoted argument.
+                    $argument = $tokens[$i + 1] ?? null;
+                    if ($argument !== null && str_starts_with($argument, '"')) {
+                        ++$i;
+                    }
+                }
+
+                continue;
+            }
+
+            if ($url === null) {
+                $url = trim($token, '"');
+            }
         }
 
-        return null;
+        if ($bookmark !== null) {
+            return '#'.$bookmark;
+        }
+
+        return $url;
     }
 
     /**
