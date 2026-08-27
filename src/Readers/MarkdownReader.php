@@ -60,8 +60,21 @@ final class MarkdownReader implements ReaderInterface
 {
     private readonly MarkdownParser $parser;
 
-    public function __construct()
-    {
+    /**
+     * @param bool $allowRawHtml Whether raw HTML embedded in the Markdown
+     *                           (HtmlBlock/HtmlInline, e.g. <br>, <div>, or
+     *                           <script>) is carried into the tree as RawHtml
+     *                           nodes and passed through verbatim by the
+     *                           writers. Defaults to false: raw HTML is
+     *                           dropped (the pre-v0.4.3 behavior), because a
+     *                           passthrough would bypass the HTML writer's
+     *                           escaping and let untrusted documents inject
+     *                           script into generated output. Callers that
+     *                           control their input may opt in explicitly.
+     */
+    public function __construct(
+        private readonly bool $allowRawHtml = false,
+    ) {
         $environment = new Environment();
         $environment->addExtension(new CommonMarkCoreExtension());
         $environment->addExtension(new GithubFlavoredMarkdownExtension());
@@ -86,6 +99,10 @@ final class MarkdownReader implements ReaderInterface
 
     private function mapBlock(Node $node): ?BlockInterface
     {
+        if ($node instanceof HtmlBlock) {
+            return $this->mapRawHtml($node->getLiteral());
+        }
+
         return match (true) {
             $node instanceof CommonMarkHeading => new Heading(
                 $node->getLevel(),
@@ -101,12 +118,19 @@ final class MarkdownReader implements ReaderInterface
             $node instanceof IndentedCode => new CodeBlock($node->getLiteral()),
             $node instanceof ThematicBreak => new HorizontalRule(),
             $node instanceof CommonMarkTable => $this->mapTable($node),
-            // Raw HTML has no first-class node of its own: wrap the literal
-            // in a RawHtml inline so it survives a read -> write round-trip
-            // instead of being silently dropped.
-            $node instanceof HtmlBlock => new Paragraph([new RawHtml($node->getLiteral())]),
             default => null,
         };
+    }
+
+    /**
+     * Raw HTML has no first-class node of its own. With the opt-in enabled it
+     * is wrapped in a RawHtml inline so it survives a read -> write round-trip;
+     * otherwise it is dropped rather than risk passing untrusted markup
+     * through the writers' escaping.
+     */
+    private function mapRawHtml(string $literal): ?Paragraph
+    {
+        return $this->allowRawHtml ? new Paragraph([new RawHtml($literal)]) : null;
     }
 
     private function mapList(ListBlock $list): ListNode
@@ -230,7 +254,7 @@ final class MarkdownReader implements ReaderInterface
                 $node->getTitle(),
             ),
             $node instanceof CommonMarkCode => new Code($node->getLiteral()),
-            $node instanceof HtmlInline => new RawHtml($node->getLiteral()),
+            $node instanceof HtmlInline => $this->allowRawHtml ? new RawHtml($node->getLiteral()) : null,
             $node instanceof Newline => $node->getType() === Newline::HARDBREAK
                 ? new LineBreak()
                 : new Text(' '),

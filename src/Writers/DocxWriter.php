@@ -26,6 +26,7 @@ use Fissible\Transmark\Nodes\Inline\Footnote;
 use Fissible\Transmark\Nodes\Inline\InlineImage;
 use Fissible\Transmark\Nodes\Inline\LineBreak;
 use Fissible\Transmark\Nodes\Inline\Link;
+use Fissible\Transmark\Nodes\Inline\RawHtml;
 use Fissible\Transmark\Nodes\Inline\Strike;
 use Fissible\Transmark\Nodes\Inline\Strong;
 use Fissible\Transmark\Nodes\Inline\Subscript;
@@ -661,6 +662,11 @@ final class DocxWriter implements WriterInterface
                         'hyperlink' => true,
                     ]);
                 }
+            } elseif ($inline instanceof RawHtml) {
+                // Raw HTML has no representation in OOXML; skip it rather
+                // than failing the whole conversion. MarkdownReader only
+                // produces RawHtml when explicitly opted in, and the pre-opt-in
+                // behavior was equally lossy (raw HTML was dropped).
             } elseif (
                 $inline instanceof InlineImage
                 || $inline instanceof Footnote
