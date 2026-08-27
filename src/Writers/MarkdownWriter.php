@@ -151,7 +151,28 @@ final class MarkdownWriter implements WriterInterface
             return $prefix.$this->renderInlines($paragraph->inlines());
         }
 
-        return $this->renderInlines($paragraph->inlines());
+        return $this->escapeLeadingListMarker($this->renderInlines($paragraph->inlines()));
+    }
+
+    /**
+     * A paragraph whose text begins with a CommonMark list marker ("- foo",
+     * "+ foo", "1. foo") would re-parse as a ListNode on the next read. Escape
+     * just the marker character(s) at the line start — normal text like
+     * "3.14" or "well-known" must stay untouched. The dot of an ordered
+     * marker is what gets escaped ("1\."), since "\1" would render a literal
+     * backslash.
+     */
+    private function escapeLeadingListMarker(string $text): string
+    {
+        if (preg_match('/^([-+*])(?=\s|$)/', $text, $matches) === 1) {
+            return '\\'.$matches[1].substr($text, 1);
+        }
+
+        if (preg_match('/^(\d{1,9})([.)])(?=\s|$)/', $text, $matches) === 1) {
+            return $matches[1].'\\'.$matches[2].substr($text, strlen($matches[1]) + 1);
+        }
+
+        return $text;
     }
 
     /**
@@ -259,7 +280,7 @@ final class MarkdownWriter implements WriterInterface
 
         $first = array_shift($content);
         if ($first instanceof Paragraph && !$first->isNumbered()) {
-            $output = $prefix.$this->renderInlines($first->inlines());
+            $output = $prefix.$this->escapeLeadingListMarker($this->renderInlines($first->inlines()));
         } else {
             $renderedFirst = $this->renderBlock($first, $document, $simpleNumIds, $labels);
             $output = rtrim($prefix)."\n".$this->indentLines($renderedFirst, $indent + 4);

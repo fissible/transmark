@@ -420,6 +420,88 @@ final class DocxReaderTest extends TestCase
         self::assertSame([], $document->content()[0]->inlines());
     }
 
+    public function test_a_tab_run_element_reads_as_a_tab_text(): void
+    {
+        $document = $this->readBody(
+            '<w:p><w:r><w:t>a</w:t></w:r><w:r><w:tab/></w:r><w:r><w:t>b</w:t></w:r></w:p>',
+        );
+
+        $inlines = $document->content()[0]->inlines();
+        self::assertCount(3, $inlines);
+        self::assertInstanceOf(Text::class, $inlines[0]);
+        self::assertSame('a', $inlines[0]->content());
+        self::assertInstanceOf(Text::class, $inlines[1]);
+        self::assertSame("\t", $inlines[1]->content());
+        self::assertInstanceOf(Text::class, $inlines[2]);
+        self::assertSame('b', $inlines[2]->content());
+    }
+
+    public function test_a_cr_run_element_reads_as_a_line_break(): void
+    {
+        $document = $this->readBody(
+            '<w:p><w:r><w:t>a</w:t></w:r><w:r><w:cr/></w:r><w:r><w:t>b</w:t></w:r></w:p>',
+        );
+
+        $inlines = $document->content()[0]->inlines();
+        self::assertCount(3, $inlines);
+        self::assertInstanceOf(Text::class, $inlines[0]);
+        self::assertInstanceOf(LineBreak::class, $inlines[1]);
+        self::assertInstanceOf(Text::class, $inlines[2]);
+    }
+
+    public function test_a_no_break_hyphen_run_element_reads_as_a_non_breaking_hyphen(): void
+    {
+        $document = $this->readBody(
+            '<w:p><w:r><w:t>a</w:t></w:r><w:r><w:noBreakHyphen/></w:r><w:r><w:t>b</w:t></w:r></w:p>',
+        );
+
+        $inlines = $document->content()[0]->inlines();
+        self::assertCount(3, $inlines);
+        self::assertInstanceOf(Text::class, $inlines[1]);
+        self::assertSame("\u{2011}", $inlines[1]->content());
+    }
+
+    public function test_an_sdt_block_reads_its_paragraph_content(): void
+    {
+        $document = $this->readBody(
+            '<w:sdt><w:sdtPr/><w:sdtContent><w:p><w:r><w:t>sdt content</w:t></w:r></w:p></w:sdtContent></w:sdt>',
+        );
+
+        self::assertCount(1, $document->content());
+        self::assertSame('sdt content', $this->paragraphText($document->content()[0]));
+    }
+
+    public function test_a_nested_sdt_inside_an_sdt_reads_recursively(): void
+    {
+        $document = $this->readBody(
+            '<w:sdt><w:sdtContent>'
+            .'<w:sdt><w:sdtContent><w:p><w:r><w:t>inner</w:t></w:r></w:p></w:sdtContent></w:sdt>'
+            .'</w:sdtContent></w:sdt>',
+        );
+
+        self::assertCount(1, $document->content());
+        self::assertSame('inner', $this->paragraphText($document->content()[0]));
+    }
+
+    public function test_an_sdt_block_containing_a_table_reads_the_table(): void
+    {
+        $document = $this->readBody(
+            '<w:sdt><w:sdtContent>'
+            .'<w:tbl><w:tr><w:tc><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+            .'</w:sdtContent></w:sdt>',
+        );
+
+        self::assertCount(1, $document->content());
+        self::assertInstanceOf(Table::class, $document->content()[0]);
+    }
+
+    public function test_an_sdt_without_sdt_content_reads_as_nothing(): void
+    {
+        $document = $this->readBody('<w:sdt><w:sdtPr/></w:sdt>');
+
+        self::assertSame([], $document->content());
+    }
+
     /**
      * @param array<string, string> $relationships rId => Target (relative to word/)
      * @param array<string, string> $mediaParts    full package part path => raw bytes
