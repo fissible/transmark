@@ -627,8 +627,12 @@ final class DocxReader implements ReaderInterface
 
             if ($child->localName === 't') {
                 $children[] = new Text($child->textContent);
-            } elseif ($child->localName === 'br') {
+            } elseif ($child->localName === 'br' || $child->localName === 'cr') {
                 $children[] = new LineBreak();
+            } elseif ($child->localName === 'tab') {
+                $children[] = new Text("\t");
+            } elseif ($child->localName === 'noBreakHyphen') {
+                $children[] = new Text("\u{2011}");
             } elseif ($child->localName === 'drawing') {
                 $image = $this->parseDrawing($child, $images);
                 if ($image !== null) {
