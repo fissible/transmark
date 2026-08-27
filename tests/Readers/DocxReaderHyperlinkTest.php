@@ -244,6 +244,57 @@ final class DocxReaderHyperlinkTest extends TestCase
         self::assertSame('click', $this->linkText($paragraph[1]));
     }
 
+    public function test_a_run_with_content_followed_by_the_field_end_keeps_the_link(): void
+    {
+        $paragraph = $this->readParagraph(
+            '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+            .'<w:r><w:instrText> HYPERLINK "https://x.test" </w:instrText></w:r>'
+            .'<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+            .'<w:r><w:t>click</w:t><w:fldChar w:fldCharType="end"/></w:r>',
+            [],
+        );
+
+        self::assertCount(1, $paragraph);
+        $link = $paragraph[0];
+        self::assertInstanceOf(Link::class, $link);
+        self::assertSame('https://x.test', $link->href());
+        self::assertSame('click', $this->linkText($link));
+    }
+
+    public function test_a_run_with_begin_and_instruction_text_captures_the_instruction(): void
+    {
+        $paragraph = $this->readParagraph(
+            '<w:r><w:fldChar w:fldCharType="begin"/><w:instrText> HYPERLINK "https://x.test" </w:instrText></w:r>'
+            .'<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+            .'<w:r><w:t>go</w:t></w:r>'
+            .'<w:r><w:fldChar w:fldCharType="end"/></w:r>',
+            [],
+        );
+
+        self::assertCount(1, $paragraph);
+        $link = $paragraph[0];
+        self::assertInstanceOf(Link::class, $link);
+        self::assertSame('https://x.test', $link->href());
+        self::assertSame('go', $this->linkText($link));
+    }
+
+    public function test_a_run_with_separate_and_content_keeps_the_result_in_the_link(): void
+    {
+        $paragraph = $this->readParagraph(
+            '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+            .'<w:r><w:instrText> HYPERLINK "https://x.test" </w:instrText></w:r>'
+            .'<w:r><w:fldChar w:fldCharType="separate"/><w:t>go</w:t></w:r>'
+            .'<w:r><w:fldChar w:fldCharType="end"/></w:r>',
+            [],
+        );
+
+        self::assertCount(1, $paragraph);
+        $link = $paragraph[0];
+        self::assertInstanceOf(Link::class, $link);
+        self::assertSame('https://x.test', $link->href());
+        self::assertSame('go', $this->linkText($link));
+    }
+
     public function test_field_based_hyperlink_with_anchor_uses_fragment_href(): void
     {
         $paragraph = $this->readParagraph(

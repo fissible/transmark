@@ -586,48 +586,7 @@ final class DocxReader implements ReaderInterface
             }
 
             if ($child->localName === 'r') {
-                $event = $this->parseRunFieldEvent($child);
-
-                if ($event !== null) {
-                    [$eventName, $payload] = $event;
-
-                    if ($eventName === 'begin') {
-                        $fieldStack[] = ['instruction' => '', 'pendingHyperlink' => null, 'separated' => false, 'result' => []];
-                    } elseif ($eventName === 'instrText') {
-                        if ($fieldStack !== []) {
-                            $top = array_key_last($fieldStack);
-                            if ($fieldStack[$top]['instruction'] !== null) {
-                                $fieldStack[$top]['instruction'] .= $payload;
-                            }
-                        }
-                    } elseif ($eventName === 'separate') {
-                        if ($fieldStack !== []) {
-                            $top = array_key_last($fieldStack);
-                            $fieldStack[$top]['pendingHyperlink'] = $this->hyperlinkFromFieldInstruction($fieldStack[$top]['instruction']);
-                            $fieldStack[$top]['instruction'] = null;
-                            $fieldStack[$top]['separated'] = true;
-                        }
-                    } elseif ($eventName === 'end') {
-                        $frame = array_pop($fieldStack);
-                        if ($frame !== null) {
-                            $this->appendFieldResult($inlines, $fieldStack, $this->flushField($frame['pendingHyperlink'], $frame['result']));
-                        }
-                    }
-                }
-
-                // A run can carry a field event AND ordinary content
-                // (w:t/w:br/w:drawing); never discard the content half. It
-                // lands in the innermost separated field's result region, or
-                // in the paragraph when no result region is open.
-                $runInlines = $this->parseRun($child, $images);
-                if ($runInlines !== []) {
-                    $top = $fieldStack === [] ? null : array_key_last($fieldStack);
-                    if ($top !== null && $fieldStack[$top]['separated']) {
-                        $fieldStack[$top]['result'] = [...$fieldStack[$top]['result'], ...$runInlines];
-                    } else {
-                        array_push($inlines, ...$runInlines);
-                    }
-                }
+                $this->consumeRun($child, $images, $inlines, $fieldStack);
 
                 continue;
             }
@@ -684,15 +643,40 @@ final class DocxReader implements ReaderInterface
     }
 
     /**
-     * Detects field-code events (w:fldChar / w:instrText) inside a run.
-     * Returns [eventName, payload] where eventName is one of begin|separate|
-     * end|instrText, or null when the run carries ordinary content instead.
+     * Consumes a single w:r in document order. Field events (w:fldChar /
+     * w:instrText) and ordinary content (w:t, w:br, w:tab, w:drawing, ...)
+     * can appear in any order inside one run, and content must never be
+     * lost or misordered around the events: "w:t then w:fldChar end" keeps
+     * the text inside the link, "w:fldChar begin then w:instrText" still
+     * captures the instruction. Contiguous content between events is batched
+     * so the run's rPr formatting wraps it as a whole — a run with no field
+     * events is a single batch, identical to the previous behavior.
      *
-     * @return array{0: string, 1: ?string}|null
+     * @param array<string, array{path: string, data: string, mimeType: string}>                                 $images
+     * @param InlineInterface[]                                                                                   $inlines
+     * @param array<int, array{instruction: ?string, pendingHyperlink: ?string, separated: bool, result: InlineInterface[]}> $fieldStack
      */
-    private function parseRunFieldEvent(\DOMElement $run): ?array
+    private function consumeRun(\DOMElement $run, array $images, array &$inlines, array &$fieldStack): void
     {
-        $instruction = null;
+        $properties = $this->directChild($run, 'rPr');
+        /** @var InlineInterface[] $contentGroup contiguous content seen since the last field event */
+        $contentGroup = [];
+
+        $flushContent = function () use (&$contentGroup, &$inlines, &$fieldStack, $properties): void {
+            if ($contentGroup === []) {
+                return;
+            }
+
+            $wrapped = $this->wrapRunContent($contentGroup, $properties);
+            $contentGroup = [];
+
+            $top = $fieldStack === [] ? null : array_key_last($fieldStack);
+            if ($top !== null && $fieldStack[$top]['separated']) {
+                $fieldStack[$top]['result'] = [...$fieldStack[$top]['result'], ...$wrapped];
+            } else {
+                array_push($inlines, ...$wrapped);
+            }
+        };
 
         foreach ($run->childNodes as $child) {
             if (!$child instanceof \DOMElement || $child->namespaceURI !== self::WORD_NAMESPACE) {
@@ -702,15 +686,107 @@ final class DocxReader implements ReaderInterface
             if ($child->localName === 'fldChar') {
                 $type = $this->attributeValue($child, 'fldCharType') ?? '';
 
-                if (in_array($type, ['begin', 'separate', 'end'], true)) {
-                    return [$type, null];
+                if (!in_array($type, ['begin', 'separate', 'end'], true)) {
+                    continue;
                 }
-            } elseif ($child->localName === 'instrText') {
-                $instruction = $child->textContent;
+
+                $flushContent();
+
+                if ($type === 'begin') {
+                    $fieldStack[] = ['instruction' => '', 'pendingHyperlink' => null, 'separated' => false, 'result' => []];
+                } elseif ($type === 'separate') {
+                    if ($fieldStack !== []) {
+                        $top = array_key_last($fieldStack);
+                        $fieldStack[$top]['pendingHyperlink'] = $this->hyperlinkFromFieldInstruction($fieldStack[$top]['instruction']);
+                        $fieldStack[$top]['instruction'] = null;
+                        $fieldStack[$top]['separated'] = true;
+                    }
+                } elseif ($type === 'end') {
+                    $frame = array_pop($fieldStack);
+                    if ($frame !== null) {
+                        $this->appendFieldResult($inlines, $fieldStack, $this->flushField($frame['pendingHyperlink'], $frame['result']));
+                    }
+                }
+
+                continue;
+            }
+
+            if ($child->localName === 'instrText') {
+                $flushContent();
+
+                if ($fieldStack !== []) {
+                    $top = array_key_last($fieldStack);
+                    if ($fieldStack[$top]['instruction'] !== null) {
+                        $fieldStack[$top]['instruction'] .= $child->textContent;
+                    }
+                }
+
+                continue;
+            }
+
+            if ($child->localName === 't') {
+                $contentGroup[] = new Text($child->textContent);
+            } elseif ($child->localName === 'br' || $child->localName === 'cr') {
+                $contentGroup[] = new LineBreak();
+            } elseif ($child->localName === 'tab') {
+                $contentGroup[] = new Text("\t");
+            } elseif ($child->localName === 'noBreakHyphen') {
+                $contentGroup[] = new Text("\u{2011}");
+            } elseif ($child->localName === 'drawing') {
+                $image = $this->parseDrawing($child, $images);
+                if ($image !== null) {
+                    $contentGroup[] = $image;
+                }
             }
         }
 
-        return $instruction === null ? null : ['instrText', $instruction];
+        $flushContent();
+    }
+
+    /**
+     * Applies a run's rPr formatting to its content: vertical alignment
+     * innermost, then strike, underline, italic, bold outermost, matching
+     * the CT_RPr nesting the writer emits.
+     *
+     * @param InlineInterface[] $inlines
+     *
+     * @return InlineInterface[]
+     */
+    private function wrapRunContent(array $inlines, ?\DOMElement $properties): array
+    {
+        if ($inlines === []) {
+            return [];
+        }
+
+        $wrapped = $inlines;
+        $verticalAlignment = $this->attributeValue(
+            $this->directChild($properties, 'vertAlign'),
+            'val',
+        );
+
+        if ($verticalAlignment === 'superscript') {
+            $wrapped = [new Superscript($wrapped)];
+        } elseif ($verticalAlignment === 'subscript') {
+            $wrapped = [new Subscript($wrapped)];
+        }
+
+        if ($this->isEnabled($this->directChild($properties, 'strike'))) {
+            $wrapped = [new Strike($wrapped)];
+        }
+
+        if ($this->isEnabled($this->directChild($properties, 'u'))) {
+            $wrapped = [new Underline($wrapped)];
+        }
+
+        if ($this->isEnabled($this->directChild($properties, 'i'))) {
+            $wrapped = [new Emphasis($wrapped)];
+        }
+
+        if ($this->isEnabled($this->directChild($properties, 'b'))) {
+            $wrapped = [new Strong($wrapped)];
+        }
+
+        return $wrapped;
     }
 
     /**
@@ -841,72 +917,6 @@ final class DocxReader implements ReaderInterface
         }
 
         return [new Link($href, $children, $this->attributeValue($element, 'tooltip'))];
-    }
-
-    /**
-     * @param array<string, array{path: string, data: string, mimeType: string}> $images
-     *
-     * @return InlineInterface[]
-     */
-    private function parseRun(\DOMElement $run, array $images): array
-    {
-        $children = [];
-
-        foreach ($run->childNodes as $child) {
-            if (!$child instanceof \DOMElement || $child->namespaceURI !== self::WORD_NAMESPACE) {
-                continue;
-            }
-
-            if ($child->localName === 't') {
-                $children[] = new Text($child->textContent);
-            } elseif ($child->localName === 'br' || $child->localName === 'cr') {
-                $children[] = new LineBreak();
-            } elseif ($child->localName === 'tab') {
-                $children[] = new Text("\t");
-            } elseif ($child->localName === 'noBreakHyphen') {
-                $children[] = new Text("\u{2011}");
-            } elseif ($child->localName === 'drawing') {
-                $image = $this->parseDrawing($child, $images);
-                if ($image !== null) {
-                    $children[] = $image;
-                }
-            }
-        }
-
-        if ($children === []) {
-            return [];
-        }
-
-        $properties = $this->directChild($run, 'rPr');
-        $wrapped = $children;
-        $verticalAlignment = $this->attributeValue(
-            $this->directChild($properties, 'vertAlign'),
-            'val',
-        );
-
-        if ($verticalAlignment === 'superscript') {
-            $wrapped = [new Superscript($wrapped)];
-        } elseif ($verticalAlignment === 'subscript') {
-            $wrapped = [new Subscript($wrapped)];
-        }
-
-        if ($this->isEnabled($this->directChild($properties, 'strike'))) {
-            $wrapped = [new Strike($wrapped)];
-        }
-
-        if ($this->isEnabled($this->directChild($properties, 'u'))) {
-            $wrapped = [new Underline($wrapped)];
-        }
-
-        if ($this->isEnabled($this->directChild($properties, 'i'))) {
-            $wrapped = [new Emphasis($wrapped)];
-        }
-
-        if ($this->isEnabled($this->directChild($properties, 'b'))) {
-            $wrapped = [new Strong($wrapped)];
-        }
-
-        return $wrapped;
     }
 
     /**
