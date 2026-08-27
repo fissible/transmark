@@ -567,12 +567,18 @@ final class DocxReader implements ReaderInterface
     private function parseInlineContainer(\DOMElement $container, array $images, array $hyperlinks = []): array
     {
         $inlines = [];
-        /** @var string|null $fieldInstruction accumulated w:instrText of the open field */
-        $fieldInstruction = null;
-        /** @var string|null $pendingHyperlink href of a HYPERLINK field between separate and end */
-        $pendingHyperlink = null;
-        /** @var InlineInterface[] $fieldResult runs buffered between separate and end */
-        $fieldResult = [];
+        /**
+         * Field state is a stack because fields nest (e.g. a PAGE field inside
+         * a HYPERLINK field). Each frame accumulates its instruction text and
+         * its result runs; on end, a HYPERLINK frame wraps its result in a
+         * Link, and everything is appended to the parent frame when one is
+         * open. `separated` distinguishes the instruction region (content
+         * before w:fldChar separate stays outside the field) from the result
+         * region (content after separate is the field's output).
+         *
+         * @var array<int, array{instruction: ?string, pendingHyperlink: ?string, separated: bool, result: InlineInterface[]}> $fieldStack
+         */
+        $fieldStack = [];
 
         foreach ($container->childNodes as $child) {
             if (!$child instanceof \DOMElement || $child->namespaceURI !== self::WORD_NAMESPACE) {
@@ -580,39 +586,7 @@ final class DocxReader implements ReaderInterface
             }
 
             if ($child->localName === 'r') {
-                $event = $this->parseRunFieldEvent($child);
-
-                if ($event !== null) {
-                    [$eventName, $payload] = $event;
-
-                    if ($eventName === 'begin') {
-                        $fieldInstruction = '';
-                        $pendingHyperlink = null;
-                        $fieldResult = [];
-                    } elseif ($eventName === 'instrText') {
-                        if ($fieldInstruction !== null) {
-                            $fieldInstruction .= $payload;
-                        }
-                    } elseif ($eventName === 'separate') {
-                        $pendingHyperlink = $this->hyperlinkFromFieldInstruction($fieldInstruction);
-                        $fieldInstruction = null;
-                    } elseif ($eventName === 'end') {
-                        array_push($inlines, ...$this->flushField($pendingHyperlink, $fieldResult));
-                        $fieldInstruction = null;
-                        $pendingHyperlink = null;
-                        $fieldResult = [];
-                    }
-
-                    continue;
-                }
-
-                $runInlines = $this->parseRun($child, $images);
-
-                if ($pendingHyperlink !== null) {
-                    array_push($fieldResult, ...$runInlines);
-                } else {
-                    array_push($inlines, ...$runInlines);
-                }
+                $this->consumeRun($child, $images, $inlines, $fieldStack);
 
                 continue;
             }
@@ -634,22 +608,75 @@ final class DocxReader implements ReaderInterface
             }
         }
 
-        // A field that never closed (malformed source) must not lose its result runs.
-        array_push($inlines, ...$this->flushField($pendingHyperlink, $fieldResult));
+        // Fields that never closed (malformed source) must not lose their
+        // result runs; resolve from the innermost out.
+        while ($fieldStack !== []) {
+            $frame = array_pop($fieldStack);
+            $this->appendFieldResult($inlines, $fieldStack, $this->flushField($frame['pendingHyperlink'], $frame['result']));
+        }
 
         return $inlines;
     }
 
     /**
-     * Detects field-code events (w:fldChar / w:instrText) inside a run.
-     * Returns [eventName, payload] where eventName is one of begin|separate|
-     * end|instrText, or null when the run carries ordinary content instead.
+     * Appends emitted inlines either to the innermost open field's result
+     * buffer or, when no field is open, straight to the paragraph's inlines.
      *
-     * @return array{0: string, 1: ?string}|null
+     * @param InlineInterface[]                                                                                        $inlines
+     * @param array<int, array{instruction: ?string, pendingHyperlink: ?string, separated: bool, result: InlineInterface[]}> $fieldStack
+     * @param InlineInterface[]                                                                                        $emitted
      */
-    private function parseRunFieldEvent(\DOMElement $run): ?array
+    private function appendFieldResult(array &$inlines, array &$fieldStack, array $emitted): void
     {
-        $instruction = null;
+        if ($emitted === []) {
+            return;
+        }
+
+        if ($fieldStack === []) {
+            array_push($inlines, ...$emitted);
+
+            return;
+        }
+
+        $top = array_key_last($fieldStack);
+        $fieldStack[$top]['result'] = [...$fieldStack[$top]['result'], ...$emitted];
+    }
+
+    /**
+     * Consumes a single w:r in document order. Field events (w:fldChar /
+     * w:instrText) and ordinary content (w:t, w:br, w:tab, w:drawing, ...)
+     * can appear in any order inside one run, and content must never be
+     * lost or misordered around the events: "w:t then w:fldChar end" keeps
+     * the text inside the link, "w:fldChar begin then w:instrText" still
+     * captures the instruction. Contiguous content between events is batched
+     * so the run's rPr formatting wraps it as a whole — a run with no field
+     * events is a single batch, identical to the previous behavior.
+     *
+     * @param array<string, array{path: string, data: string, mimeType: string}>                                 $images
+     * @param InlineInterface[]                                                                                   $inlines
+     * @param array<int, array{instruction: ?string, pendingHyperlink: ?string, separated: bool, result: InlineInterface[]}> $fieldStack
+     */
+    private function consumeRun(\DOMElement $run, array $images, array &$inlines, array &$fieldStack): void
+    {
+        $properties = $this->directChild($run, 'rPr');
+        /** @var InlineInterface[] $contentGroup contiguous content seen since the last field event */
+        $contentGroup = [];
+
+        $flushContent = function () use (&$contentGroup, &$inlines, &$fieldStack, $properties): void {
+            if ($contentGroup === []) {
+                return;
+            }
+
+            $wrapped = $this->wrapRunContent($contentGroup, $properties);
+            $contentGroup = [];
+
+            $top = $fieldStack === [] ? null : array_key_last($fieldStack);
+            if ($top !== null && $fieldStack[$top]['separated']) {
+                $fieldStack[$top]['result'] = [...$fieldStack[$top]['result'], ...$wrapped];
+            } else {
+                array_push($inlines, ...$wrapped);
+            }
+        };
 
         foreach ($run->childNodes as $child) {
             if (!$child instanceof \DOMElement || $child->namespaceURI !== self::WORD_NAMESPACE) {
@@ -659,22 +686,121 @@ final class DocxReader implements ReaderInterface
             if ($child->localName === 'fldChar') {
                 $type = $this->attributeValue($child, 'fldCharType') ?? '';
 
-                if (in_array($type, ['begin', 'separate', 'end'], true)) {
-                    return [$type, null];
+                if (!in_array($type, ['begin', 'separate', 'end'], true)) {
+                    continue;
                 }
-            } elseif ($child->localName === 'instrText') {
-                $instruction = $child->textContent;
+
+                $flushContent();
+
+                if ($type === 'begin') {
+                    $fieldStack[] = ['instruction' => '', 'pendingHyperlink' => null, 'separated' => false, 'result' => []];
+                } elseif ($type === 'separate') {
+                    if ($fieldStack !== []) {
+                        $top = array_key_last($fieldStack);
+                        $fieldStack[$top]['pendingHyperlink'] = $this->hyperlinkFromFieldInstruction($fieldStack[$top]['instruction']);
+                        $fieldStack[$top]['instruction'] = null;
+                        $fieldStack[$top]['separated'] = true;
+                    }
+                } elseif ($type === 'end') {
+                    $frame = array_pop($fieldStack);
+                    if ($frame !== null) {
+                        $this->appendFieldResult($inlines, $fieldStack, $this->flushField($frame['pendingHyperlink'], $frame['result']));
+                    }
+                }
+
+                continue;
+            }
+
+            if ($child->localName === 'instrText') {
+                $flushContent();
+
+                if ($fieldStack !== []) {
+                    $top = array_key_last($fieldStack);
+                    if ($fieldStack[$top]['instruction'] !== null) {
+                        $fieldStack[$top]['instruction'] .= $child->textContent;
+                    }
+                }
+
+                continue;
+            }
+
+            if ($child->localName === 't') {
+                $contentGroup[] = new Text($child->textContent);
+            } elseif ($child->localName === 'br' || $child->localName === 'cr') {
+                $contentGroup[] = new LineBreak();
+            } elseif ($child->localName === 'tab') {
+                $contentGroup[] = new Text("\t");
+            } elseif ($child->localName === 'noBreakHyphen') {
+                $contentGroup[] = new Text("\u{2011}");
+            } elseif ($child->localName === 'drawing') {
+                $image = $this->parseDrawing($child, $images);
+                if ($image !== null) {
+                    $contentGroup[] = $image;
+                }
             }
         }
 
-        return $instruction === null ? null : ['instrText', $instruction];
+        $flushContent();
     }
 
     /**
-     * Extracts the target from a field instruction like
-     * ` HYPERLINK "https://example.com" ` or ` HYPERLINK \l "Bookmark" `.
-     * Returns null for any other field (PAGE, TOC, ...) so the result runs
-     * keep their cached text but gain no link wrapper.
+     * Applies a run's rPr formatting to its content: vertical alignment
+     * innermost, then strike, underline, italic, bold outermost, matching
+     * the CT_RPr nesting the writer emits.
+     *
+     * @param InlineInterface[] $inlines
+     *
+     * @return InlineInterface[]
+     */
+    private function wrapRunContent(array $inlines, ?\DOMElement $properties): array
+    {
+        if ($inlines === []) {
+            return [];
+        }
+
+        $wrapped = $inlines;
+        $verticalAlignment = $this->attributeValue(
+            $this->directChild($properties, 'vertAlign'),
+            'val',
+        );
+
+        if ($verticalAlignment === 'superscript') {
+            $wrapped = [new Superscript($wrapped)];
+        } elseif ($verticalAlignment === 'subscript') {
+            $wrapped = [new Subscript($wrapped)];
+        }
+
+        if ($this->isEnabled($this->directChild($properties, 'strike'))) {
+            $wrapped = [new Strike($wrapped)];
+        }
+
+        if ($this->isEnabled($this->directChild($properties, 'u'))) {
+            $wrapped = [new Underline($wrapped)];
+        }
+
+        if ($this->isEnabled($this->directChild($properties, 'i'))) {
+            $wrapped = [new Emphasis($wrapped)];
+        }
+
+        if ($this->isEnabled($this->directChild($properties, 'b'))) {
+            $wrapped = [new Strong($wrapped)];
+        }
+
+        return $wrapped;
+    }
+
+    /**
+     * Extracts the target from a field instruction. Word emits the
+     * destination after optional switches that must not be mistaken for it:
+     *
+     *   HYPERLINK "https://example.com" \o "tip"
+     *   HYPERLINK \o "tip" "https://example.com" \t "_blank"
+     *   HYPERLINK \l "Bookmark"          (or: HYPERLINK \l Bookmark1)
+     *
+     * \l is an internal bookmark (quoted or bare); \o (screentip) and \t
+     * (target frame) take a quoted argument that is skipped. Returns null
+     * for any other field (PAGE, TOC, ...) so the result runs keep their
+     * cached text but gain no link wrapper.
      */
     private function hyperlinkFromFieldInstruction(?string $instruction): ?string
     {
@@ -682,19 +808,60 @@ final class DocxReader implements ReaderInterface
             return null;
         }
 
-        if (preg_match('/HYPERLINK\s+\\\\l\s+(["\'])(.*?)\1/i', $instruction, $matches) === 1) {
-            return '#'.$matches[2];
+        // Tokenize: switches (\x), whole quoted strings, bare words. A quoted
+        // string stays one token, so a \l inside a screentip is never read as
+        // a switch and a destination containing spaces survives intact.
+        preg_match_all('/\\\\.|"[^"]*"|\S+/', $instruction, $matches);
+        $tokens = $matches[0] ?? [];
+
+        $start = null;
+        foreach ($tokens as $index => $token) {
+            if (strcasecmp($token, 'HYPERLINK') === 0) {
+                $start = $index + 1;
+                break;
+            }
         }
 
-        if (preg_match('/HYPERLINK\s+(["\'])(.*?)\1/i', $instruction, $matches) === 1) {
-            return $matches[2];
+        if ($start === null) {
+            return null;
         }
 
-        if (preg_match('/HYPERLINK\s+([^\s"\']+)/i', $instruction, $matches) === 1) {
-            return $matches[1];
+        $bookmark = null;
+        $url = null;
+
+        for ($i = $start, $count = count($tokens); $i < $count; ++$i) {
+            $token = $tokens[$i];
+
+            if (str_starts_with($token, '\\')) {
+                $switch = strtolower(substr($token, 1));
+
+                if ($switch === 'l') {
+                    $argument = $tokens[$i + 1] ?? null;
+                    if ($argument !== null) {
+                        $bookmark = trim($argument, '"');
+                        ++$i;
+                    }
+                } elseif (in_array($switch, ['o', 't'], true)) {
+                    // \o (screentip) and \t (target frame) take a quoted argument.
+                    $argument = $tokens[$i + 1] ?? null;
+                    if ($argument !== null && str_starts_with($argument, '"')) {
+                        ++$i;
+                    }
+                }
+
+                continue;
+            }
+
+            if ($url === null) {
+                $url = trim($token, '"');
+            }
         }
 
-        return null;
+        if ($bookmark !== null) {
+            return '#'.$bookmark;
+        }
+
+        return $url;
     }
 
     /**
@@ -750,72 +917,6 @@ final class DocxReader implements ReaderInterface
         }
 
         return [new Link($href, $children, $this->attributeValue($element, 'tooltip'))];
-    }
-
-    /**
-     * @param array<string, array{path: string, data: string, mimeType: string}> $images
-     *
-     * @return InlineInterface[]
-     */
-    private function parseRun(\DOMElement $run, array $images): array
-    {
-        $children = [];
-
-        foreach ($run->childNodes as $child) {
-            if (!$child instanceof \DOMElement || $child->namespaceURI !== self::WORD_NAMESPACE) {
-                continue;
-            }
-
-            if ($child->localName === 't') {
-                $children[] = new Text($child->textContent);
-            } elseif ($child->localName === 'br' || $child->localName === 'cr') {
-                $children[] = new LineBreak();
-            } elseif ($child->localName === 'tab') {
-                $children[] = new Text("\t");
-            } elseif ($child->localName === 'noBreakHyphen') {
-                $children[] = new Text("\u{2011}");
-            } elseif ($child->localName === 'drawing') {
-                $image = $this->parseDrawing($child, $images);
-                if ($image !== null) {
-                    $children[] = $image;
-                }
-            }
-        }
-
-        if ($children === []) {
-            return [];
-        }
-
-        $properties = $this->directChild($run, 'rPr');
-        $wrapped = $children;
-        $verticalAlignment = $this->attributeValue(
-            $this->directChild($properties, 'vertAlign'),
-            'val',
-        );
-
-        if ($verticalAlignment === 'superscript') {
-            $wrapped = [new Superscript($wrapped)];
-        } elseif ($verticalAlignment === 'subscript') {
-            $wrapped = [new Subscript($wrapped)];
-        }
-
-        if ($this->isEnabled($this->directChild($properties, 'strike'))) {
-            $wrapped = [new Strike($wrapped)];
-        }
-
-        if ($this->isEnabled($this->directChild($properties, 'u'))) {
-            $wrapped = [new Underline($wrapped)];
-        }
-
-        if ($this->isEnabled($this->directChild($properties, 'i'))) {
-            $wrapped = [new Emphasis($wrapped)];
-        }
-
-        if ($this->isEnabled($this->directChild($properties, 'b'))) {
-            $wrapped = [new Strong($wrapped)];
-        }
-
-        return $wrapped;
     }
 
     /**

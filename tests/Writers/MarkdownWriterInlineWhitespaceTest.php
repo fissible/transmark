@@ -12,6 +12,7 @@ use Fissible\Transmark\Nodes\Inline\Strike;
 use Fissible\Transmark\Nodes\Inline\Strong;
 use Fissible\Transmark\Nodes\Inline\Text;
 use Fissible\Transmark\Readers\MarkdownReader;
+use Fissible\Transmark\Tests\Support\TreeEquivalence;
 use Fissible\Transmark\Writers\MarkdownWriter;
 use PHPUnit\Framework\TestCase;
 
@@ -132,9 +133,24 @@ final class MarkdownWriterInlineWhitespaceTest extends TestCase
 
         $source = new Document([new Paragraph([new Text('a '), new Code(' foo '), new Text(' b')])]);
 
-        self::assertSame(
-            $writer->write($source),
-            $writer->write($reader->read($writer->write($source))),
+        // Semantic equivalence, not serialization stability: the tree must
+        // survive the round trip exactly.
+        TreeEquivalence::assertEquivalent(
+            $source,
+            $reader->read($writer->write($source)),
+        );
+    }
+
+    public function test_code_span_with_tab_and_edge_spaces_keeps_the_tab(): void
+    {
+        $reader = new MarkdownReader();
+        $writer = new MarkdownWriter();
+
+        $source = new Document([new Paragraph([new Text('a '), new Code(" \t "), new Text(' b')])]);
+
+        TreeEquivalence::assertEquivalent(
+            $source,
+            $reader->read($writer->write($source)),
         );
     }
 }
