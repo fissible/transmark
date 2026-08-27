@@ -411,7 +411,20 @@ final class DocxWriterTest extends TestCase
         yield 'inline image' => [new InlineImage('image.png', 'Image')];
         yield 'footnote' => [new Footnote('1', [])];
         yield 'comment' => [new Comment([], 'Reviewer')];
-        yield 'raw html' => [new RawHtml('<br>')];
+    }
+
+    public function test_raw_html_inlines_are_skipped_instead_of_failing_the_conversion(): void
+    {
+        $document = new Document([
+            new Paragraph([new Text('a '), new RawHtml('<br>'), new Text(' b')]),
+        ]);
+
+        $bytes = (new DocxWriter())->write($document);
+        $reparsed = (new DocxReader())->read($bytes);
+
+        $paragraph = $reparsed->content()[0];
+        self::assertInstanceOf(Paragraph::class, $paragraph);
+        self::assertSame('a  b', $this->paragraphText($paragraph));
     }
 
     private function roundTrip(Document $document): Document
