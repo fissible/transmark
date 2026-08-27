@@ -246,6 +246,43 @@ final class DocxReader implements ReaderInterface
      *
      * @return BlockInterface[]
      */
+    /**
+     * A table's Word-namespaced child elements with any w:sdt replaced by
+     * the children of its w:sdtContent. Content controls are legal around a
+     * w:tr and around a w:tc (Word's repeating-section templates put them
+     * there), and a caller scanning for w:tr/w:tc would otherwise skip the
+     * control and lose the whole row or cell. Nested controls unwrap
+     * recursively; a control with no w:sdtContent contributes nothing.
+     *
+     * @return \DOMElement[]
+     */
+    private function unwrapSdtChildren(\DOMElement $container): array
+    {
+        $children = [];
+
+        foreach ($container->childNodes as $child) {
+            if (!$child instanceof \DOMElement || $child->namespaceURI !== self::WORD_NAMESPACE) {
+                continue;
+            }
+
+            if ($child->localName !== 'sdt') {
+                $children[] = $child;
+
+                continue;
+            }
+
+            $content = $this->directChild($child, 'sdtContent');
+
+            if ($content !== null) {
+                foreach ($this->unwrapSdtChildren($content) as $inner) {
+                    $children[] = $inner;
+                }
+            }
+        }
+
+        return $children;
+    }
+
     private function parseSdt(\DOMElement $sdt, array $images, array $hyperlinks): array
     {
         foreach ($sdt->childNodes as $child) {
@@ -272,12 +309,8 @@ final class DocxReader implements ReaderInterface
         $header = null;
         $rows = [];
 
-        foreach ($tbl->childNodes as $child) {
-            if (
-                !$child instanceof \DOMElement
-                || $child->namespaceURI !== self::WORD_NAMESPACE
-                || $child->localName !== 'tr'
-            ) {
+        foreach ($this->unwrapSdtChildren($tbl) as $child) {
+            if ($child->localName !== 'tr') {
                 continue;
             }
 
@@ -304,12 +337,8 @@ final class DocxReader implements ReaderInterface
     {
         $cells = [];
 
-        foreach ($tr->childNodes as $child) {
-            if (
-                !$child instanceof \DOMElement
-                || $child->namespaceURI !== self::WORD_NAMESPACE
-                || $child->localName !== 'tc'
-            ) {
+        foreach ($this->unwrapSdtChildren($tr) as $child) {
+            if ($child->localName !== 'tc') {
                 continue;
             }
 
