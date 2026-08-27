@@ -152,7 +152,28 @@ final class MarkdownWriter implements WriterInterface
             return $prefix.$this->renderInlines($paragraph->inlines());
         }
 
-        return $this->renderInlines($paragraph->inlines());
+        return $this->escapeLeadingListMarker($this->renderInlines($paragraph->inlines()));
+    }
+
+    /**
+     * A paragraph whose text begins with a CommonMark list marker ("- foo",
+     * "+ foo", "1. foo") would re-parse as a ListNode on the next read. Escape
+     * just the marker character(s) at the line start — normal text like
+     * "3.14" or "well-known" must stay untouched. The dot of an ordered
+     * marker is what gets escaped ("1\."), since "\1" would render a literal
+     * backslash.
+     */
+    private function escapeLeadingListMarker(string $text): string
+    {
+        if (preg_match('/^([-+*])(?=\s|$)/', $text, $matches) === 1) {
+            return '\\'.$matches[1].substr($text, 1);
+        }
+
+        if (preg_match('/^(\d{1,9})([.)])(?=\s|$)/', $text, $matches) === 1) {
+            return $matches[1].'\\'.$matches[2].substr($text, strlen($matches[1]) + 1);
+        }
+
+        return $text;
     }
 
     /**
@@ -260,7 +281,7 @@ final class MarkdownWriter implements WriterInterface
 
         $first = array_shift($content);
         if ($first instanceof Paragraph && !$first->isNumbered()) {
-            $output = $prefix.$this->renderInlines($first->inlines());
+            $output = $prefix.$this->escapeLeadingListMarker($this->renderInlines($first->inlines()));
         } else {
             $renderedFirst = $this->renderBlock($first, $document, $simpleNumIds, $labels);
             $output = rtrim($prefix)."\n".$this->indentLines($renderedFirst, $indent + 4);
@@ -396,9 +417,9 @@ final class MarkdownWriter implements WriterInterface
     {
         return match (true) {
             $inline instanceof Text => $this->escapeText($inline->content()),
-            $inline instanceof Strong => '**'.$this->renderInlines($inline->children()).'**',
-            $inline instanceof Emphasis => '*'.$this->renderInlines($inline->children()).'*',
-            $inline instanceof Strike => '~~'.$this->renderInlines($inline->children()).'~~',
+            $inline instanceof Strong => $this->wrapDelimited($this->renderInlines($inline->children()), '**', '**'),
+            $inline instanceof Emphasis => $this->wrapDelimited($this->renderInlines($inline->children()), '*', '*'),
+            $inline instanceof Strike => $this->wrapDelimited($this->renderInlines($inline->children()), '~~', '~~'),
             $inline instanceof Underline => '<u>'.$this->renderInlines($inline->children()).'</u>',
             $inline instanceof Superscript => '<sup>'.$this->renderInlines($inline->children()).'</sup>',
             $inline instanceof Subscript => '<sub>'.$this->renderInlines($inline->children()).'</sub>',
@@ -411,6 +432,36 @@ final class MarkdownWriter implements WriterInterface
         };
     }
 
+    /**
+     * Wraps rendered inline content in emphasis delimiters. CommonMark's
+     * flanking rules reject a delimiter that touches whitespace ("** foo **"
+     * is literal text, not a strong), so leading/trailing whitespace is moved
+     * outside the delimiters. Whitespace-only content degrades to plain text
+     * rather than emitting an unparseable delimiter pair.
+     */
+    private function wrapDelimited(string $inner, string $open, string $close): string
+    {
+        $leading = '';
+        $trailing = '';
+        $trimmed = $inner;
+
+        if (preg_match('/^\s+/', $trimmed, $matches) === 1) {
+            $leading = $matches[0];
+            $trimmed = substr($trimmed, strlen($leading));
+        }
+
+        if (preg_match('/\s+$/', $trimmed, $matches) === 1) {
+            $trailing = $matches[0];
+            $trimmed = substr($trimmed, 0, -strlen($trailing));
+        }
+
+        if ($trimmed === '') {
+            return $inner;
+        }
+
+        return $leading.$open.$trimmed.$close.$trailing;
+    }
+
     private function renderCode(Code $code): string
     {
         preg_match_all('/`+/', $code->content(), $matches);
@@ -420,11 +471,34 @@ final class MarkdownWriter implements WriterInterface
         }
 
         $delimiter = str_repeat('`', max(1, $longest + 1));
-        $padding = str_starts_with($code->content(), '`') || str_ends_with($code->content(), '`')
-            ? ' '
-            : '';
+        $padding = $this->codeSpanPadding($code->content());
 
         return $delimiter.$padding.$code->content().$padding.$delimiter;
+    }
+
+    /**
+     * CommonMark trims one leading and one trailing space from a code span
+     * when it both begins and ends with a space (and is not all-space), so
+     * that case needs a padding space on each side to survive the round-trip.
+     * Backtick-adjacent content needs padding so the delimiters stay
+     * unambiguous; all-space content is preserved verbatim by the spec and
+     * needs none.
+     */
+    private function codeSpanPadding(string $content): string
+    {
+        if (str_starts_with($content, '`') || str_ends_with($content, '`')) {
+            return ' ';
+        }
+
+        if (
+            preg_match('/^\s/', $content) === 1
+            && preg_match('/\s$/', $content) === 1
+            && trim($content) !== ''
+        ) {
+            return ' ';
+        }
+
+        return '';
     }
 
     private function renderLink(Link $link): string

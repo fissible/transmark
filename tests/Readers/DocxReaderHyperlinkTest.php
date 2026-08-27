@@ -122,6 +122,75 @@ final class DocxReaderHyperlinkTest extends TestCase
         self::assertInstanceOf(\Fissible\Transmark\Nodes\Inline\Text::class, $paragraph->inlines()[0]);
     }
 
+    public function test_field_based_hyperlink_wraps_result_runs_in_a_link(): void
+    {
+        $paragraph = $this->readParagraph(
+            '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+            .'<w:r><w:instrText xml:space="preserve"> HYPERLINK "https://example.com/page" </w:instrText></w:r>'
+            .'<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+            .'<w:r><w:t>click</w:t></w:r>'
+            .'<w:r><w:fldChar w:fldCharType="end"/></w:r>',
+            [],
+        );
+
+        self::assertCount(1, $paragraph);
+        $link = $paragraph[0];
+        self::assertInstanceOf(Link::class, $link);
+        self::assertSame('https://example.com/page', $link->href());
+        self::assertCount(1, $link->children());
+        self::assertInstanceOf(Text::class, $link->children()[0]);
+        self::assertSame('click', $link->children()[0]->content());
+    }
+
+    public function test_field_based_hyperlink_with_anchor_uses_fragment_href(): void
+    {
+        $paragraph = $this->readParagraph(
+            '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+            .'<w:r><w:instrText> HYPERLINK \l "Section 2" </w:instrText></w:r>'
+            .'<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+            .'<w:r><w:t>jump</w:t></w:r>'
+            .'<w:r><w:fldChar w:fldCharType="end"/></w:r>',
+            [],
+        );
+
+        self::assertInstanceOf(Link::class, $paragraph[0]);
+        self::assertSame('#Section 2', $paragraph[0]->href());
+    }
+
+    public function test_field_based_hyperlink_wraps_all_result_runs_in_one_link(): void
+    {
+        $paragraph = $this->readParagraph(
+            '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+            .'<w:r><w:instrText> HYPERLINK "https://example.com" </w:instrText></w:r>'
+            .'<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+            .'<w:r><w:t>click </w:t></w:r>'
+            .'<w:r><w:t>here</w:t></w:r>'
+            .'<w:r><w:fldChar w:fldCharType="end"/></w:r>',
+            [],
+        );
+
+        self::assertCount(1, $paragraph);
+        $link = $paragraph[0];
+        self::assertInstanceOf(Link::class, $link);
+        self::assertCount(2, $link->children());
+    }
+
+    public function test_non_hyperlink_field_keeps_its_cached_result_text(): void
+    {
+        $paragraph = $this->readParagraph(
+            '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+            .'<w:r><w:instrText> PAGE </w:instrText></w:r>'
+            .'<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+            .'<w:r><w:t>12</w:t></w:r>'
+            .'<w:r><w:fldChar w:fldCharType="end"/></w:r>',
+            [],
+        );
+
+        self::assertCount(1, $paragraph);
+        self::assertInstanceOf(Text::class, $paragraph[0]);
+        self::assertSame('12', $paragraph[0]->content());
+    }
+
     /**
      * Builds a DOCX with custom body XML and relationships XML.
      */
