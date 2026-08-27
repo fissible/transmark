@@ -215,6 +215,11 @@ final class HtmlWriter implements WriterInterface
             $span .= ' rowspan="'.$cell->rowspan().'"';
         }
 
+        $alignment = $cell->attributes()->get('alignment');
+        if ($alignment !== null) {
+            $span .= ' style="text-align: '.$this->escape((string) $alignment).'"';
+        }
+
         $content = $this->renderBlocks($cell->content(), $document, $simpleNumIds, $labels);
 
         return sprintf('<%1$s%2$s>%3$s</%1$s>', $tag, $span, $content);
