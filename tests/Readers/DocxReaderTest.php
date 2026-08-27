@@ -461,6 +461,47 @@ final class DocxReaderTest extends TestCase
         self::assertSame("\u{2011}", $inlines[1]->content());
     }
 
+    public function test_an_sdt_block_reads_its_paragraph_content(): void
+    {
+        $document = $this->readBody(
+            '<w:sdt><w:sdtPr/><w:sdtContent><w:p><w:r><w:t>sdt content</w:t></w:r></w:p></w:sdtContent></w:sdt>',
+        );
+
+        self::assertCount(1, $document->content());
+        self::assertSame('sdt content', $this->paragraphText($document->content()[0]));
+    }
+
+    public function test_a_nested_sdt_inside_an_sdt_reads_recursively(): void
+    {
+        $document = $this->readBody(
+            '<w:sdt><w:sdtContent>'
+            .'<w:sdt><w:sdtContent><w:p><w:r><w:t>inner</w:t></w:r></w:p></w:sdtContent></w:sdt>'
+            .'</w:sdtContent></w:sdt>',
+        );
+
+        self::assertCount(1, $document->content());
+        self::assertSame('inner', $this->paragraphText($document->content()[0]));
+    }
+
+    public function test_an_sdt_block_containing_a_table_reads_the_table(): void
+    {
+        $document = $this->readBody(
+            '<w:sdt><w:sdtContent>'
+            .'<w:tbl><w:tr><w:tc><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+            .'</w:sdtContent></w:sdt>',
+        );
+
+        self::assertCount(1, $document->content());
+        self::assertInstanceOf(Table::class, $document->content()[0]);
+    }
+
+    public function test_an_sdt_without_sdt_content_reads_as_nothing(): void
+    {
+        $document = $this->readBody('<w:sdt><w:sdtPr/></w:sdt>');
+
+        self::assertSame([], $document->content());
+    }
+
     /**
      * @param array<string, string> $relationships rId => Target (relative to word/)
      * @param array<string, string> $mediaParts    full package part path => raw bytes
