@@ -196,6 +196,21 @@ Those conversions are deliberately lossy: reading the Markdown back preserves
 the visible text, but cannot reconstruct the original OOXML numbering or
 formatting metadata.
 
+Raw HTML embedded in the Markdown (`<br>`, `<div>`, embeds) is **dropped by
+default**. `MarkdownReader` can instead carry it into the tree as `RawHtml`
+nodes that pass through the writers verbatim, but that passthrough bypasses
+the HTML writer's escaping, so it is opt-in for callers who control their
+input:
+
+```php
+$document = (new MarkdownReader(allowRawHtml: true))->read($markdown);
+```
+
+With the opt-in, `HtmlWriter`/`MarkdownWriter` emit the literal HTML unchanged
+(`DocxWriter` skips it — OOXML has no raw-HTML representation), and any
+`script`/`style`/event-handler markup in the source reaches the output
+verbatim.
+
 ## Command-line usage
 
 `bin/transmark convert` picks a reader/writer pair by file extension and runs

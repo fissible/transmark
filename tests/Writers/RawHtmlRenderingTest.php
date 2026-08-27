@@ -54,7 +54,7 @@ final class RawHtmlRenderingTest extends TestCase
 
     public function test_raw_html_survives_a_markdown_round_trip(): void
     {
-        $reader = new MarkdownReader();
+        $reader = new MarkdownReader(allowRawHtml: true);
         $writer = new MarkdownWriter();
         $source = "Before\n\n<div class=\"x\">hello <b>world</b></div>\n\nAfter\n";
 
@@ -65,9 +65,20 @@ final class RawHtmlRenderingTest extends TestCase
     {
         $source = "Before\n\n<details><summary>More</summary>hidden</details>\n\nAfter\n";
 
-        $html = (new HtmlWriter())->write((new MarkdownReader())->read($source));
+        $html = (new HtmlWriter())->write((new MarkdownReader(allowRawHtml: true))->read($source));
 
         self::assertStringContainsString('<details><summary>More</summary>hidden</details>', $html);
         self::assertStringNotContainsString('&lt;details', $html);
+    }
+
+    public function test_script_in_markdown_is_kept_out_of_html_output_by_default(): void
+    {
+        $source = "Hello\n\n<script>alert(1)</script>\n\n<img src=x onerror=alert(2)>\n";
+
+        $html = (new HtmlWriter())->write((new MarkdownReader())->read($source));
+
+        self::assertStringNotContainsString('<script>', $html);
+        self::assertStringNotContainsString('onerror', $html);
+        self::assertStringNotContainsString('alert(', $html);
     }
 }

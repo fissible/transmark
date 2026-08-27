@@ -186,7 +186,7 @@ MD)->content()[0];
 
     public function test_raw_html_block_reads_as_a_paragraph_wrapping_raw_html(): void
     {
-        $content = (new MarkdownReader())->read(
+        $content = (new MarkdownReader(allowRawHtml: true))->read(
             "Before\n\n<div class=\"x\">hello <b>world</b></div>\n\nAfter\n",
         )->content();
 
@@ -200,7 +200,7 @@ MD)->content()[0];
 
     public function test_raw_html_inline_reads_as_a_raw_html_inline(): void
     {
-        $paragraph = (new MarkdownReader())->read("a <br> b\n")->content()[0];
+        $paragraph = (new MarkdownReader(allowRawHtml: true))->read("a <br> b\n")->content()[0];
         self::assertInstanceOf(Paragraph::class, $paragraph);
 
         $inlines = $paragraph->inlines();
@@ -213,12 +213,27 @@ MD)->content()[0];
 
     public function test_multiline_raw_html_block_keeps_its_literal_lines(): void
     {
-        $content = (new MarkdownReader())->read("<pre>line1\nline2</pre>\n\ntext\n")->content();
+        $content = (new MarkdownReader(allowRawHtml: true))->read("<pre>line1\nline2</pre>\n\ntext\n")->content();
 
         $paragraph = $content[0];
         self::assertInstanceOf(Paragraph::class, $paragraph);
         self::assertInstanceOf(RawHtml::class, $paragraph->inlines()[0]);
         self::assertSame("<pre>line1\nline2</pre>", $paragraph->inlines()[0]->content());
+    }
+
+    public function test_raw_html_is_dropped_by_default(): void
+    {
+        $content = (new MarkdownReader())->read(
+            "Before\n\n<div class=\"x\">hello</div>\n\na <br> b\n",
+        )->content();
+
+        // An HtmlBlock vanishes wholesale (including its inner text) and an
+        // inline tag leaves only the surrounding text behind. This is the
+        // pre-opt-in behavior and the security default: raw markup never
+        // reaches the writers' output.
+        self::assertCount(2, $content);
+        self::assertSame('Before', $this->paragraphText($content[0]));
+        self::assertSame('a  b', $this->paragraphText($content[1]));
     }
 
     /**
