@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Fissible\Transmark\Tests\Writers;
 
+use Fissible\Transmark\Attributes;
 use Fissible\Transmark\Document;
 use Fissible\Transmark\Nodes\Block\Paragraph;
 use Fissible\Transmark\Nodes\Block\Table;
@@ -16,7 +17,10 @@ use Fissible\Transmark\Numbering\Num;
 use Fissible\Transmark\Numbering\NumberFormat;
 use Fissible\Transmark\Numbering\NumberingDefinitions;
 use Fissible\Transmark\Numbering\NumberingRef;
+use Fissible\Transmark\Readers\HtmlReader;
+use Fissible\Transmark\Readers\MarkdownReader;
 use Fissible\Transmark\Writers\HtmlWriter;
+use Fissible\Transmark\Writers\MarkdownWriter;
 use PHPUnit\Framework\TestCase;
 
 final class HtmlWriterTableRenderingTest extends TestCase
@@ -84,6 +88,46 @@ final class HtmlWriterTableRenderingTest extends TestCase
 
         self::assertStringNotContainsString('colspan', $html);
         self::assertStringNotContainsString('rowspan', $html);
+    }
+
+    public function test_renders_cell_alignment_as_a_text_align_style(): void
+    {
+        $table = new Table(rows: [
+            new TableRow([
+                new TableCell([new Paragraph([new Text('left')])], attributes: new Attributes(data: ['alignment' => 'left'])),
+                new TableCell([new Paragraph([new Text('center')])], attributes: new Attributes(data: ['alignment' => 'center'])),
+                new TableCell([new Paragraph([new Text('right')])], attributes: new Attributes(data: ['alignment' => 'right'])),
+            ]),
+        ]);
+
+        $html = (new HtmlWriter())->write(new Document([$table]));
+
+        self::assertStringContainsString('<td style="text-align: left">', $html);
+        self::assertStringContainsString('<td style="text-align: center">', $html);
+        self::assertStringContainsString('<td style="text-align: right">', $html);
+    }
+
+    public function test_cells_without_alignment_emit_no_style(): void
+    {
+        $html = (new HtmlWriter())->write(new Document([new Table(rows: [$this->row('plain')])]));
+
+        self::assertStringNotContainsString('text-align', $html);
+    }
+
+    public function test_markdown_table_alignment_survives_an_html_round_trip(): void
+    {
+        $source = "| a | b | c |\n|:---|:---:|---:|\n| 1 | 2 | 3 |\n";
+
+        $html = (new HtmlWriter())->write((new MarkdownReader())->read($source));
+        $roundTripped = (new MarkdownWriter())->write((new HtmlReader())->read($html));
+
+        self::assertStringContainsString('| :--- | :---: | ---: |', $roundTripped);
+
+        $header = (new MarkdownReader())->read($roundTripped)->content()[0]->header();
+        self::assertNotNull($header);
+        self::assertSame('left', $header->cells()[0]->attributes()->get('alignment'));
+        self::assertSame('center', $header->cells()[1]->attributes()->get('alignment'));
+        self::assertSame('right', $header->cells()[2]->attributes()->get('alignment'));
     }
 
     public function test_escapes_cell_content(): void

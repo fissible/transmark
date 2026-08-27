@@ -330,6 +330,38 @@ final class HtmlReaderTest extends TestCase
         self::assertSame(1, $cell->rowspan());
     }
 
+    public function test_reads_cell_alignment_from_the_align_attribute(): void
+    {
+        $table = $this->read('<table><tr><td align="center">c</td></tr></table>')->content()[0];
+        $cell = $table->rows()[0]->cells()[0];
+
+        self::assertSame('center', $cell->attributes()->get('alignment'));
+    }
+
+    public function test_reads_cell_alignment_from_text_align_style(): void
+    {
+        $table = $this->read('<table><tr><td style="text-align: right">r</td></tr></table>')->content()[0];
+        $cell = $table->rows()[0]->cells()[0];
+
+        self::assertSame('right', $cell->attributes()->get('alignment'));
+    }
+
+    public function test_style_alignment_wins_over_the_align_attribute(): void
+    {
+        $table = $this->read('<table><tr><td align="left" style="text-align: center">c</td></tr></table>')->content()[0];
+        $cell = $table->rows()[0]->cells()[0];
+
+        self::assertSame('center', $cell->attributes()->get('alignment'));
+    }
+
+    public function test_unknown_alignment_values_are_ignored(): void
+    {
+        $table = $this->read('<table><tr><td align="justify" style="color: red">x</td></tr></table>')->content()[0];
+        $cell = $table->rows()[0]->cells()[0];
+
+        self::assertFalse($cell->attributes()->has('alignment'));
+    }
+
     public function test_reads_a_block_level_image(): void
     {
         $document = $this->read('<body><img src="photo.jpg" alt="A photo" title="Title"></body>');

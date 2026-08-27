@@ -24,6 +24,7 @@ use Fissible\Transmark\Nodes\Inline\Emphasis;
 use Fissible\Transmark\Nodes\Inline\InlineImage;
 use Fissible\Transmark\Nodes\Inline\LineBreak;
 use Fissible\Transmark\Nodes\Inline\Link;
+use Fissible\Transmark\Nodes\Inline\RawHtml;
 use Fissible\Transmark\Nodes\Inline\Strike;
 use Fissible\Transmark\Nodes\Inline\Strong;
 use Fissible\Transmark\Nodes\Inline\Subscript;
@@ -110,6 +111,13 @@ final class HtmlWriter implements WriterInterface
         }
 
         if ($block instanceof Paragraph) {
+            // A paragraph that is exactly one RawHtml (e.g. an HTML block
+            // embedded in Markdown) emits its literal content directly —
+            // wrapping block-level HTML like <div> in <p> would be invalid.
+            if (count($block->inlines()) === 1 && $block->inlines()[0] instanceof RawHtml) {
+                return $block->inlines()[0]->content();
+            }
+
             if ($this->isLegalNumberedParagraph($block, $simpleNumIds, $labels)) {
                 return $this->renderLegalNumberedParagraph($block, $labels);
             }
@@ -213,6 +221,11 @@ final class HtmlWriter implements WriterInterface
         }
         if ($cell->rowspan() !== 1) {
             $span .= ' rowspan="'.$cell->rowspan().'"';
+        }
+
+        $alignment = $cell->attributes()->get('alignment');
+        if ($alignment !== null) {
+            $span .= ' style="text-align: '.$this->escape((string) $alignment).'"';
         }
 
         $content = $this->renderBlocks($cell->content(), $document, $simpleNumIds, $labels);
@@ -455,6 +468,7 @@ final class HtmlWriter implements WriterInterface
             $inline instanceof Link => $this->renderLink($inline),
             $inline instanceof LineBreak => '<br>',
             $inline instanceof InlineImage => $this->renderInlineImage($inline),
+            $inline instanceof RawHtml => $inline->content(),
             default => throw UnsupportedHtmlNodeException::at($inline),
         };
     }

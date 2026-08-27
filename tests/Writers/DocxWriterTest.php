@@ -23,6 +23,7 @@ use Fissible\Transmark\Nodes\Inline\Footnote;
 use Fissible\Transmark\Nodes\Inline\InlineImage;
 use Fissible\Transmark\Nodes\Inline\LineBreak;
 use Fissible\Transmark\Nodes\Inline\Link;
+use Fissible\Transmark\Nodes\Inline\RawHtml;
 use Fissible\Transmark\Nodes\Inline\Strike;
 use Fissible\Transmark\Nodes\Inline\Strong;
 use Fissible\Transmark\Nodes\Inline\Superscript;
@@ -410,6 +411,7 @@ final class DocxWriterTest extends TestCase
         yield 'inline image' => [new InlineImage('image.png', 'Image')];
         yield 'footnote' => [new Footnote('1', [])];
         yield 'comment' => [new Comment([], 'Reviewer')];
+        yield 'raw html' => [new RawHtml('<br>')];
     }
 
     private function roundTrip(Document $document): Document

@@ -17,6 +17,7 @@ use Fissible\Transmark\Nodes\Inline\Emphasis;
 use Fissible\Transmark\Nodes\Inline\InlineImage;
 use Fissible\Transmark\Nodes\Inline\LineBreak;
 use Fissible\Transmark\Nodes\Inline\Link;
+use Fissible\Transmark\Nodes\Inline\RawHtml;
 use Fissible\Transmark\Nodes\Inline\Strike;
 use Fissible\Transmark\Nodes\Inline\Strong;
 use Fissible\Transmark\Nodes\Inline\Text;
@@ -181,6 +182,43 @@ MD)->content()[0];
         self::assertInstanceOf(BlockQuote::class, $content[0]);
         self::assertSame('Quoted', $this->paragraphText($content[0]->content()[0]));
         self::assertInstanceOf(HorizontalRule::class, $content[1]);
+    }
+
+    public function test_raw_html_block_reads_as_a_paragraph_wrapping_raw_html(): void
+    {
+        $content = (new MarkdownReader())->read(
+            "Before\n\n<div class=\"x\">hello <b>world</b></div>\n\nAfter\n",
+        )->content();
+
+        self::assertCount(3, $content);
+        $middle = $content[1];
+        self::assertInstanceOf(Paragraph::class, $middle);
+        self::assertCount(1, $middle->inlines());
+        self::assertInstanceOf(RawHtml::class, $middle->inlines()[0]);
+        self::assertSame('<div class="x">hello <b>world</b></div>', $middle->inlines()[0]->content());
+    }
+
+    public function test_raw_html_inline_reads_as_a_raw_html_inline(): void
+    {
+        $paragraph = (new MarkdownReader())->read("a <br> b\n")->content()[0];
+        self::assertInstanceOf(Paragraph::class, $paragraph);
+
+        $inlines = $paragraph->inlines();
+        self::assertCount(3, $inlines);
+        self::assertInstanceOf(Text::class, $inlines[0]);
+        self::assertInstanceOf(RawHtml::class, $inlines[1]);
+        self::assertSame('<br>', $inlines[1]->content());
+        self::assertInstanceOf(Text::class, $inlines[2]);
+    }
+
+    public function test_multiline_raw_html_block_keeps_its_literal_lines(): void
+    {
+        $content = (new MarkdownReader())->read("<pre>line1\nline2</pre>\n\ntext\n")->content();
+
+        $paragraph = $content[0];
+        self::assertInstanceOf(Paragraph::class, $paragraph);
+        self::assertInstanceOf(RawHtml::class, $paragraph->inlines()[0]);
+        self::assertSame("<pre>line1\nline2</pre>", $paragraph->inlines()[0]->content());
     }
 
     /**
