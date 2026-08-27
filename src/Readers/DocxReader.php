@@ -15,6 +15,7 @@ use Fissible\Transmark\Nodes\Block\Paragraph;
 use Fissible\Transmark\Nodes\Block\Table;
 use Fissible\Transmark\Nodes\Block\TableCell;
 use Fissible\Transmark\Nodes\Block\TableRow;
+use Fissible\Transmark\Nodes\Inline\Code;
 use Fissible\Transmark\Nodes\Inline\Emphasis;
 use Fissible\Transmark\Nodes\Inline\InlineImage;
 use Fissible\Transmark\Nodes\Inline\LineBreak;
@@ -60,6 +61,16 @@ final class DocxReader implements ReaderInterface
 
     /** 96 DPI: 914400 EMU per inch / 96 pixels per inch. */
     private const EMU_PER_PIXEL = 9525;
+
+    /**
+     * The font DocxWriter puts on a run to mark inline code. OOXML has no
+     * code element, so the monospaced run *is* the representation and
+     * reading it back is what makes inline code survive a round trip.
+     */
+    private const CODE_FONT = 'Courier New';
+
+    /** Paragraph style DocxWriter uses for a CodeBlock. */
+    private const CODE_BLOCK_STYLE = 'CodeBlock';
 
     private const IMAGE_MIME_TYPES = [
         'png' => 'image/png',
@@ -546,6 +557,10 @@ final class DocxReader implements ReaderInterface
             return new Heading((int) $matches[1], $inlines);
         }
 
+        if ($styleName === self::CODE_BLOCK_STYLE) {
+            $inlines = $this->unwrapCodeInlines($inlines);
+        }
+
         $numbering = $this->parseNumberingRef($properties);
         $paragraph = new Paragraph($inlines, styleName: $styleName, numbering: $numbering);
 
@@ -802,6 +817,15 @@ final class DocxReader implements ReaderInterface
         }
 
         $wrapped = $inlines;
+
+        // Innermost, matching the writer: a Code inline becomes a monospaced
+        // run carrying its content, so a monospaced run of pure text becomes
+        // a Code inline again. Runs holding anything else (a break, a
+        // drawing) are left alone — Code carries a string, not children.
+        if ($this->isCodeRun($properties)) {
+            $wrapped = $this->asCodeInline($wrapped) ?? $wrapped;
+        }
+
         $verticalAlignment = $this->attributeValue(
             $this->directChild($properties, 'vertAlign'),
             'val',
@@ -830,6 +854,67 @@ final class DocxReader implements ReaderInterface
         }
 
         return $wrapped;
+    }
+
+    /**
+     * Whether a run's rPr marks it as inline code, i.e. carries the
+     * monospaced font DocxWriter uses for a Code node. Only that font
+     * counts: treating every monospaced run as code would turn ordinary
+     * prose that happens to be set in a code face into `code` spans.
+     */
+    private function isCodeRun(?\DOMElement $properties): bool
+    {
+        $fonts = $this->directChild($properties, 'rFonts');
+
+        if ($fonts === null) {
+            return false;
+        }
+
+        return $this->attributeValue($fonts, 'ascii') === self::CODE_FONT
+            || $this->attributeValue($fonts, 'hAnsi') === self::CODE_FONT;
+    }
+
+    /**
+     * Collapses a run's content into a single Code inline, or null when the
+     * run holds anything other than text (Code carries a string, so a break
+     * or an image inside it could not be represented without losing it).
+     *
+     * @param InlineInterface[] $inlines
+     *
+     * @return InlineInterface[]|null
+     */
+    private function asCodeInline(array $inlines): ?array
+    {
+        $content = '';
+
+        foreach ($inlines as $inline) {
+            if (!$inline instanceof Text) {
+                return null;
+            }
+
+            $content .= $inline->content();
+        }
+
+        return $content === '' ? null : [new Code($content)];
+    }
+
+    /**
+     * Undoes the run-level Code detection for a code-block paragraph, where
+     * the monospaced font is the block's own presentation rather than an
+     * inline code span. Keeps CodeBlock reading exactly as it was.
+     *
+     * @param InlineInterface[] $inlines
+     *
+     * @return InlineInterface[]
+     */
+    private function unwrapCodeInlines(array $inlines): array
+    {
+        return array_map(
+            static fn (InlineInterface $inline): InlineInterface => $inline instanceof Code
+                ? new Text($inline->content(), $inline->attributes())
+                : $inline,
+            $inlines,
+        );
     }
 
     /**
