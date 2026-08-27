@@ -234,6 +234,24 @@ final class MarkdownRoundTripTest extends TestCase
         );
     }
 
+    public function test_author_raw_html_is_documented_as_dropped_by_default(): void
+    {
+        $markdown = "Before\n\n<div class=\"x\">hello</div>\n\na <br> b\n";
+
+        TreeEquivalence::assertExpectedLoss(
+            (new MarkdownReader(allowRawHtml: true))->read($markdown),
+            (new MarkdownReader())->read($markdown),
+            'MarkdownReader drops raw HTML unless allowRawHtml is opted into, because the '
+            .'writers emit a RawHtml node verbatim and would bypass HtmlWriter escaping.',
+            function (Document $actual): void {
+                // The block vanishes with its inner text; an inline tag
+                // leaves the surrounding text behind.
+                self::assertCount(2, $actual->content());
+                self::assertSame(['Before', 'a  b'], $this->paragraphTexts($actual));
+            },
+        );
+    }
+
     private function assertRoundTrip(Document $document): void
     {
         TreeEquivalence::assertEquivalent($document, $this->roundTrip($document));
