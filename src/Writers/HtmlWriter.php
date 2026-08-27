@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Fissible\Transmark\Writers;
 
+use Fissible\Transmark\Attributes;
 use Fissible\Transmark\Contracts\BlockInterface;
 use Fissible\Transmark\Contracts\InlineInterface;
 use Fissible\Transmark\Contracts\WriterInterface;
@@ -106,7 +107,12 @@ final class HtmlWriter implements WriterInterface
         if ($block instanceof Heading) {
             $tag = 'h'.$block->level();
 
-            return sprintf('<%1$s>%2$s</%1$s>', $tag, $this->renderInlines($block->inlines()));
+            return sprintf(
+                '<%1$s%2$s>%3$s</%1$s>',
+                $tag,
+                $this->attributeString($block->attributes()),
+                $this->renderInlines($block->inlines()),
+            );
         }
 
         if ($block instanceof Paragraph) {
@@ -114,7 +120,8 @@ final class HtmlWriter implements WriterInterface
                 return $this->renderLegalNumberedParagraph($block, $labels);
             }
 
-            return '<p>'.$this->renderInlines($block->inlines()).'</p>';
+            return '<p'.$this->attributeString($block->attributes()).'>'
+                .$this->renderInlines($block->inlines()).'</p>';
         }
 
         if ($block instanceof ListNode) {
@@ -148,6 +155,7 @@ final class HtmlWriter implements WriterInterface
                 $block->title(),
                 $block->width(),
                 $block->height(),
+                $block->attributes(),
             );
         }
 
@@ -419,9 +427,13 @@ final class HtmlWriter implements WriterInterface
 
         $prefix = $label === '' ? '' : $this->escape($label).' ';
 
+        // The legal-outline classes come first; the node's own classes are
+        // appended by attributeString().
+        $forcedClasses = 'numbered-paragraph legal-level-'.$numbering->ilvl();
+
         return sprintf(
-            '<p class="numbered-paragraph legal-level-%d">%s%s</p>',
-            $numbering->ilvl(),
+            '<p%s>%s%s</p>',
+            $this->attributeString($paragraph->attributes(), $forcedClasses),
             $prefix,
             $this->renderInlines($paragraph->inlines()),
         );
@@ -451,7 +463,7 @@ final class HtmlWriter implements WriterInterface
             $inline instanceof Strike => '<s>'.$this->renderInlines($inline->children()).'</s>',
             $inline instanceof Superscript => '<sup>'.$this->renderInlines($inline->children()).'</sup>',
             $inline instanceof Subscript => '<sub>'.$this->renderInlines($inline->children()).'</sub>',
-            $inline instanceof Code => '<code>'.$this->escape($inline->content()).'</code>',
+            $inline instanceof Code => '<code'.$this->attributeString($inline->attributes()).'>'.$this->escape($inline->content()).'</code>',
             $inline instanceof Link => $this->renderLink($inline),
             $inline instanceof LineBreak => '<br>',
             $inline instanceof InlineImage => $this->renderInlineImage($inline),
@@ -469,6 +481,7 @@ final class HtmlWriter implements WriterInterface
             $image->title(),
             $image->width(),
             $image->height(),
+            $image->attributes(),
         );
     }
 
@@ -486,6 +499,7 @@ final class HtmlWriter implements WriterInterface
         ?string $title,
         ?int $width,
         ?int $height,
+        Attributes $attributes = new Attributes(),
     ): string {
         $resolvedSrc = $data !== null && $mimeType !== null
             ? 'data:'.$mimeType.';base64,'.base64_encode($data)
@@ -503,6 +517,7 @@ final class HtmlWriter implements WriterInterface
         }
 
         $html = '<img src="'.$this->escape($resolvedSrc).'" alt="'.$this->escape($alt).'"';
+        $html .= $this->attributeString($attributes);
 
         if ($title !== null) {
             $html .= ' title="'.$this->escape($title).'"';
@@ -519,6 +534,32 @@ final class HtmlWriter implements WriterInterface
         return $html.'>';
     }
 
+    /**
+     * Serializes an Attributes bag onto an element: id, then classes.
+     * `$forcedClass` (e.g. the legal-numbered-paragraph classes) is
+     * prepended to the node's own classes. Returns '' when there is
+     * nothing to emit.
+     */
+    private function attributeString(Attributes $attributes, ?string $forcedClass = null): string
+    {
+        $parts = [];
+
+        if ($attributes->id() !== null && $attributes->id() !== '') {
+            $parts[] = 'id="'.$this->escape($attributes->id()).'"';
+        }
+
+        $classes = $attributes->classes();
+        if ($forcedClass !== null) {
+            $classes = array_merge(explode(' ', $forcedClass), $classes);
+        }
+
+        if ($classes !== []) {
+            $parts[] = 'class="'.$this->escape(implode(' ', $classes)).'"';
+        }
+
+        return $parts === [] ? '' : ' '.implode(' ', $parts);
+    }
+
     private function renderLink(Link $link): string
     {
         if (!$this->isSafeLinkHref($link->href())) {
@@ -531,7 +572,9 @@ final class HtmlWriter implements WriterInterface
             ? ''
             : ' title="'.$this->escape($link->title()).'"';
 
-        return '<a href="'.$this->escape($link->href()).'"'.$title.'>'
+        return '<a href="'.$this->escape($link->href()).'"'
+            .$this->attributeString($link->attributes())
+            .$title.'>'
             .$this->renderInlines($link->children())
             .'</a>';
     }

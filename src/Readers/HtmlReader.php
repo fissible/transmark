@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Fissible\Transmark\Readers;
 
+use Fissible\Transmark\Attributes;
 use Fissible\Transmark\Contracts\BlockInterface;
 use Fissible\Transmark\Contracts\InlineInterface;
 use Fissible\Transmark\Contracts\ReaderInterface;
@@ -290,7 +291,11 @@ final class HtmlReader implements ReaderInterface
         $tag = strtolower($node->localName);
 
         if (preg_match('/^h([1-6])$/', $tag, $matches) === 1) {
-            return [new Heading((int) $matches[1], $this->trimInlineEdges($this->mapInlineChildren($node)))];
+            return [new Heading(
+                (int) $matches[1],
+                $this->trimInlineEdges($this->mapInlineChildren($node)),
+                $this->attributesFrom($node),
+            )];
         }
 
         // A table can contribute a caption Paragraph alongside the Table node,
@@ -300,7 +305,10 @@ final class HtmlReader implements ReaderInterface
         }
 
         $block = match ($tag) {
-            'p' => new Paragraph($this->trimInlineEdges($this->mapInlineChildren($node))),
+            'p' => new Paragraph(
+                $this->trimInlineEdges($this->mapInlineChildren($node)),
+                attributes: $this->attributesFrom($node),
+            ),
             'ul' => $this->mapList($node, ListNode::TYPE_UNORDERED),
             'ol' => $this->mapList($node, ListNode::TYPE_ORDERED),
             'blockquote' => new BlockQuote($this->mapBlockChildren($node)),
@@ -310,6 +318,7 @@ final class HtmlReader implements ReaderInterface
                 $node->getAttribute('src'),
                 $node->getAttribute('alt'),
                 $node->hasAttribute('title') ? $node->getAttribute('title') : null,
+                attributes: $this->attributesFrom($node),
             ),
             default => null,
         };
@@ -406,26 +415,41 @@ final class HtmlReader implements ReaderInterface
         $tag = strtolower($node->localName);
 
         return match ($tag) {
-            'strong', 'b' => new Strong($this->mapInlineChildren($node)),
-            'em', 'i' => new Emphasis($this->mapInlineChildren($node)),
-            'u' => new Underline($this->mapInlineChildren($node)),
-            's', 'strike', 'del' => new Strike($this->mapInlineChildren($node)),
-            'sub' => new Subscript($this->mapInlineChildren($node)),
-            'sup' => new Superscript($this->mapInlineChildren($node)),
-            'code' => new Code($node->textContent),
+            'strong', 'b' => new Strong($this->mapInlineChildren($node), $this->attributesFrom($node)),
+            'em', 'i' => new Emphasis($this->mapInlineChildren($node), $this->attributesFrom($node)),
+            'u' => new Underline($this->mapInlineChildren($node), $this->attributesFrom($node)),
+            's', 'strike', 'del' => new Strike($this->mapInlineChildren($node), $this->attributesFrom($node)),
+            'sub' => new Subscript($this->mapInlineChildren($node), $this->attributesFrom($node)),
+            'sup' => new Superscript($this->mapInlineChildren($node), $this->attributesFrom($node)),
+            'code' => new Code($node->textContent, $this->attributesFrom($node)),
             'a' => new Link(
                 $node->getAttribute('href'),
                 $this->mapInlineChildren($node),
                 $node->hasAttribute('title') ? $node->getAttribute('title') : null,
+                $this->attributesFrom($node),
             ),
             'br' => new LineBreak(),
             'img' => new InlineImage(
                 $node->getAttribute('src'),
                 $node->getAttribute('alt'),
                 $node->hasAttribute('title') ? $node->getAttribute('title') : null,
+                attributes: $this->attributesFrom($node),
             ),
             default => null,
         };
+    }
+
+    /**
+     * Carries an element's id and class list into the node's Attributes
+     * bag so they can survive an HTML read -> write round-trip.
+     */
+    private function attributesFrom(\DOMElement $element): Attributes
+    {
+        $id = $element->hasAttribute('id') ? $element->getAttribute('id') : null;
+        $class = $element->getAttribute('class');
+        $classes = $class === '' ? [] : (preg_split('/\s+/', trim($class)) ?: []);
+
+        return new Attributes(id: $id, classes: $classes);
     }
 
     private function mapList(\DOMElement $node, string $type): ListNode
