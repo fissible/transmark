@@ -591,9 +591,35 @@ final class HtmlReader implements ReaderInterface
                 $content = [new Paragraph($this->mapInlineChildren($child))];
             }
 
-            $cells[] = new TableCell($content, $colspan, $rowspan);
+            $alignment = $this->cellAlignment($child);
+            $attributes = $alignment === null
+                ? new Attributes()
+                : new Attributes(data: ['alignment' => $alignment]);
+
+            $cells[] = new TableCell($content, $colspan, $rowspan, $attributes);
         }
 
         return new TableRow($cells);
+    }
+
+    /**
+     * Resolves a cell's horizontal alignment from the modern CSS form
+     * (style="text-align: center") first, then the legacy align attribute.
+     * Only the three alignment values the model and MarkdownWriter support
+     * (left/center/right) are recognized.
+     */
+    private function cellAlignment(\DOMElement $cell): ?string
+    {
+        $style = $cell->getAttribute('style');
+        if ($style !== '' && preg_match('/text-align\s*:\s*(left|center|right)/i', $style, $matches) === 1) {
+            return strtolower($matches[1]);
+        }
+
+        $align = strtolower($cell->getAttribute('align'));
+        if (in_array($align, ['left', 'center', 'right'], true)) {
+            return $align;
+        }
+
+        return null;
     }
 }
