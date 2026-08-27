@@ -13,6 +13,7 @@ use Fissible\Transmark\Nodes\Block\Paragraph;
 use Fissible\Transmark\Nodes\Block\Table;
 use Fissible\Transmark\Nodes\Block\TableCell;
 use Fissible\Transmark\Nodes\Block\TableRow;
+use Fissible\Transmark\Nodes\Inline\Code;
 use Fissible\Transmark\Nodes\Inline\Emphasis;
 use Fissible\Transmark\Nodes\Inline\InlineImage;
 use Fissible\Transmark\Nodes\Inline\LineBreak;
@@ -599,6 +600,64 @@ final class DocxReaderTest extends TestCase
     {
         yield 'quote' => ['Quote'];
         yield 'intense quote' => ['IntenseQuote'];
+    }
+
+    public function test_a_courier_new_run_reads_as_inline_code(): void
+    {
+        $document = $this->readBody(
+            '<w:p><w:r><w:t xml:space="preserve">use </w:t></w:r>'
+            .'<w:r><w:rPr><w:rFonts w:ascii="Courier New" w:hAnsi="Courier New"/></w:rPr>'
+            .'<w:t>array_map</w:t></w:r></w:p>',
+        );
+
+        $inlines = $document->content()[0]->inlines();
+        self::assertCount(2, $inlines);
+        self::assertInstanceOf(Text::class, $inlines[0]);
+        self::assertInstanceOf(Code::class, $inlines[1]);
+        self::assertSame('array_map', $inlines[1]->content());
+    }
+
+    public function test_other_monospaced_fonts_are_not_treated_as_inline_code(): void
+    {
+        $document = $this->readBody(
+            '<w:p><w:r><w:rPr><w:rFonts w:ascii="Consolas" w:hAnsi="Consolas"/></w:rPr>'
+            .'<w:t>not code</w:t></w:r></w:p>',
+        );
+
+        $inlines = $document->content()[0]->inlines();
+        self::assertCount(1, $inlines);
+        self::assertInstanceOf(Text::class, $inlines[0]);
+        self::assertSame('not code', $inlines[0]->content());
+    }
+
+    public function test_a_code_block_paragraph_keeps_plain_text_runs(): void
+    {
+        $document = $this->readBody(
+            '<w:p><w:pPr><w:pStyle w:val="CodeBlock"/></w:pPr>'
+            .'<w:r><w:rPr><w:rFonts w:ascii="Courier New" w:hAnsi="Courier New"/></w:rPr>'
+            .'<w:t>line one</w:t></w:r></w:p>',
+        );
+
+        $paragraph = $document->content()[0];
+        self::assertInstanceOf(Paragraph::class, $paragraph);
+        self::assertSame('CodeBlock', $paragraph->styleName());
+        self::assertCount(1, $paragraph->inlines());
+        self::assertInstanceOf(Text::class, $paragraph->inlines()[0]);
+        self::assertSame('line one', $paragraph->inlines()[0]->content());
+    }
+
+    public function test_a_courier_new_run_holding_a_break_is_left_as_text(): void
+    {
+        $document = $this->readBody(
+            '<w:p><w:r><w:rPr><w:rFonts w:ascii="Courier New"/></w:rPr>'
+            .'<w:t>a</w:t><w:br/><w:t>b</w:t></w:r></w:p>',
+        );
+
+        $inlines = $document->content()[0]->inlines();
+        self::assertCount(3, $inlines);
+        self::assertInstanceOf(Text::class, $inlines[0]);
+        self::assertInstanceOf(LineBreak::class, $inlines[1]);
+        self::assertInstanceOf(Text::class, $inlines[2]);
     }
 
     private function readBody(string $body): Document

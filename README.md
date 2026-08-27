@@ -169,6 +169,13 @@ the result back therefore preserves list numbering and visible content, not
 the original tree nesting. Code blocks preserve their visual style and line
 breaks, but the current `DocxReader` reads them back as styled paragraphs.
 
+Inline code round-trips: OOXML has no code element, so `DocxWriter` marks a
+code span by setting the run's font to Courier New, and `DocxReader` reads a
+Courier New run back as inline code. The consequence in the other direction is
+that a Word document setting ordinary prose in Courier New reads back as
+inline code — only that one font is treated this way, so other monospaced
+faces (Consolas, Menlo, …) are left as plain text.
+
 Images, inline images, footnotes, and comments require an asset/part API and
 currently throw an unsupported-node exception instead of being silently
 dropped. DOCX template editing, arbitrary layout fidelity, and media embedding
