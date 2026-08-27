@@ -632,6 +632,20 @@ final class DocxReader implements ReaderInterface
                 continue;
             }
 
+            // w:fldSimple is the compact form of the same field: the
+            // instruction is an attribute and the element's children are the
+            // cached result, so there is no begin/separate/end to track.
+            // Routed through the field stack so a simple field sitting inside
+            // a complex field's result region nests the same way.
+            if ($child->localName === 'fldSimple') {
+                $this->appendFieldResult($inlines, $fieldStack, $this->flushField(
+                    $this->hyperlinkFromFieldInstruction($this->attributeValue($child, 'instr')),
+                    $this->parseInlineContainer($child, $images, $hyperlinks),
+                ));
+
+                continue;
+            }
+
             foreach ($this->parseInlineContainer($child, $images, $hyperlinks) as $inline) {
                 $inlines[] = $inline;
             }
