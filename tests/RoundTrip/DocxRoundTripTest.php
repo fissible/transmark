@@ -157,28 +157,24 @@ final class DocxRoundTripTest extends TestCase
         TreeEquivalence::assertEquivalent($document, $this->roundTrip($document));
     }
 
-    public function test_inline_code_is_documented_as_plain_text_loss(): void
+    public function test_inline_code_round_trips(): void
     {
         $document = new Document([new Paragraph([
             new Text('with '),
             new Code('inline-code'),
+            new Text(' after'),
         ])]);
 
-        TreeEquivalence::assertExpectedLoss(
-            $document,
-            $this->roundTrip($document),
-            'DocxWriter renders inline code as a monospaced run; DocxReader reads it back as plain text.',
-            function (Document $actual): void {
-                self::assertCount(1, $actual->content());
-                self::assertSame('with inline-code', $this->paragraphText(
-                    $actual->content()[0],
-                ));
-                self::assertContainsOnlyInstancesOf(
-                    Text::class,
-                    $actual->content()[0]->inlines(),
-                );
-            },
-        );
+        TreeEquivalence::assertEquivalent($document, $this->roundTrip($document));
+    }
+
+    public function test_inline_code_inside_other_formatting_round_trips(): void
+    {
+        $document = new Document([new Paragraph([
+            new Strong([new Code('bold-code')]),
+        ])]);
+
+        TreeEquivalence::assertEquivalent($document, $this->roundTrip($document));
     }
 
     public function test_code_blocks_are_documented_as_styled_paragraphs(): void
