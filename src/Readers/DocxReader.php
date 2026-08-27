@@ -228,10 +228,37 @@ final class DocxReader implements ReaderInterface
                 $content[] = $this->parseParagraph($child, $images, $hyperlinks);
             } elseif ($child->localName === 'tbl') {
                 $content[] = $this->parseTable($child, $images, $hyperlinks);
+            } elseif ($child->localName === 'sdt') {
+                array_push($content, ...$this->parseSdt($child, $images, $hyperlinks));
             }
         }
 
         return $content;
+    }
+
+    /**
+     * w:sdt is a content-control wrapper: its w:sdtContent child holds the
+     * actual block content (paragraphs, tables, nested sdt). Without this
+     * branch a body-level content control silently vanished.
+     *
+     * @param array<string, array{path: string, data: string, mimeType: string}> $images
+     * @param array<string, string>                                              $hyperlinks
+     *
+     * @return BlockInterface[]
+     */
+    private function parseSdt(\DOMElement $sdt, array $images, array $hyperlinks): array
+    {
+        foreach ($sdt->childNodes as $child) {
+            if (
+                $child instanceof \DOMElement
+                && $child->namespaceURI === self::WORD_NAMESPACE
+                && $child->localName === 'sdtContent'
+            ) {
+                return $this->parseBodyChildren($child, $images, $hyperlinks);
+            }
+        }
+
+        return [];
     }
 
     /**
@@ -540,6 +567,12 @@ final class DocxReader implements ReaderInterface
     private function parseInlineContainer(\DOMElement $container, array $images, array $hyperlinks = []): array
     {
         $inlines = [];
+        /** @var string|null $fieldInstruction accumulated w:instrText of the open field */
+        $fieldInstruction = null;
+        /** @var string|null $pendingHyperlink href of a HYPERLINK field between separate and end */
+        $pendingHyperlink = null;
+        /** @var InlineInterface[] $fieldResult runs buffered between separate and end */
+        $fieldResult = [];
 
         foreach ($container->childNodes as $child) {
             if (!$child instanceof \DOMElement || $child->namespaceURI !== self::WORD_NAMESPACE) {
@@ -547,8 +580,38 @@ final class DocxReader implements ReaderInterface
             }
 
             if ($child->localName === 'r') {
-                foreach ($this->parseRun($child, $images) as $inline) {
-                    $inlines[] = $inline;
+                $event = $this->parseRunFieldEvent($child);
+
+                if ($event !== null) {
+                    [$eventName, $payload] = $event;
+
+                    if ($eventName === 'begin') {
+                        $fieldInstruction = '';
+                        $pendingHyperlink = null;
+                        $fieldResult = [];
+                    } elseif ($eventName === 'instrText') {
+                        if ($fieldInstruction !== null) {
+                            $fieldInstruction .= $payload;
+                        }
+                    } elseif ($eventName === 'separate') {
+                        $pendingHyperlink = $this->hyperlinkFromFieldInstruction($fieldInstruction);
+                        $fieldInstruction = null;
+                    } elseif ($eventName === 'end') {
+                        array_push($inlines, ...$this->flushField($pendingHyperlink, $fieldResult));
+                        $fieldInstruction = null;
+                        $pendingHyperlink = null;
+                        $fieldResult = [];
+                    }
+
+                    continue;
+                }
+
+                $runInlines = $this->parseRun($child, $images);
+
+                if ($pendingHyperlink !== null) {
+                    array_push($fieldResult, ...$runInlines);
+                } else {
+                    array_push($inlines, ...$runInlines);
                 }
 
                 continue;
@@ -571,7 +634,85 @@ final class DocxReader implements ReaderInterface
             }
         }
 
+        // A field that never closed (malformed source) must not lose its result runs.
+        array_push($inlines, ...$this->flushField($pendingHyperlink, $fieldResult));
+
         return $inlines;
+    }
+
+    /**
+     * Detects field-code events (w:fldChar / w:instrText) inside a run.
+     * Returns [eventName, payload] where eventName is one of begin|separate|
+     * end|instrText, or null when the run carries ordinary content instead.
+     *
+     * @return array{0: string, 1: ?string}|null
+     */
+    private function parseRunFieldEvent(\DOMElement $run): ?array
+    {
+        $instruction = null;
+
+        foreach ($run->childNodes as $child) {
+            if (!$child instanceof \DOMElement || $child->namespaceURI !== self::WORD_NAMESPACE) {
+                continue;
+            }
+
+            if ($child->localName === 'fldChar') {
+                $type = $this->attributeValue($child, 'fldCharType') ?? '';
+
+                if (in_array($type, ['begin', 'separate', 'end'], true)) {
+                    return [$type, null];
+                }
+            } elseif ($child->localName === 'instrText') {
+                $instruction = $child->textContent;
+            }
+        }
+
+        return $instruction === null ? null : ['instrText', $instruction];
+    }
+
+    /**
+     * Extracts the target from a field instruction like
+     * ` HYPERLINK "https://example.com" ` or ` HYPERLINK \l "Bookmark" `.
+     * Returns null for any other field (PAGE, TOC, ...) so the result runs
+     * keep their cached text but gain no link wrapper.
+     */
+    private function hyperlinkFromFieldInstruction(?string $instruction): ?string
+    {
+        if ($instruction === null) {
+            return null;
+        }
+
+        if (preg_match('/HYPERLINK\s+\\\\l\s+(["\'])(.*?)\1/i', $instruction, $matches) === 1) {
+            return '#'.$matches[2];
+        }
+
+        if (preg_match('/HYPERLINK\s+(["\'])(.*?)\1/i', $instruction, $matches) === 1) {
+            return $matches[2];
+        }
+
+        if (preg_match('/HYPERLINK\s+([^\s"\']+)/i', $instruction, $matches) === 1) {
+            return $matches[1];
+        }
+
+        return null;
+    }
+
+    /**
+     * @param InlineInterface[] $fieldResult
+     *
+     * @return InlineInterface[]
+     */
+    private function flushField(?string $pendingHyperlink, array $fieldResult): array
+    {
+        if ($fieldResult === []) {
+            return [];
+        }
+
+        if ($pendingHyperlink !== null) {
+            return [new Link($pendingHyperlink, $fieldResult)];
+        }
+
+        return $fieldResult;
     }
 
     /**
