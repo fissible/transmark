@@ -76,7 +76,9 @@ final class NumberingEngineTest extends TestCase
 
         self::assertSame('1.1.1.1', $labels->labelFor($greatGrandchild));
         self::assertSame('2', $labels->labelFor($secondParent));
-        self::assertSame('2...1', $labels->labelFor($restartedDeepLevel));
+        // The reset level-1/level-2 counters render as their start values,
+        // the way Word fills in intermediates of a deep-level label.
+        self::assertSame('2.1.1.1', $labels->labelFor($restartedDeepLevel));
     }
 
     public function test_two_num_ids_sharing_one_abstract_num_do_not_share_counters(): void
@@ -135,6 +137,35 @@ final class NumberingEngineTest extends TestCase
         self::assertSame('1', $labels->labelFor($inListItem));
         self::assertSame('2', $labels->labelFor($inTableHeader));
         self::assertSame('3', $labels->labelFor($inTableBody));
+    }
+
+    public function test_a_deep_level_paragraph_renders_missing_ancestors_as_their_start_values(): void
+    {
+        $paragraph = $this->numberedParagraph(numId: 1, ilvl: 2);
+
+        $labels = (new NumberingEngine())->resolve(new Document(
+            content: [$paragraph],
+            numbering: $this->numberingDefinitions(),
+        ));
+
+        // Word fills in never-started ancestors with their start value:
+        // "%1.%2.%3" for a first paragraph at level 2 renders "1.1.1",
+        // not the engine's previous "..1".
+        self::assertSame('1.1.1', $labels->labelFor($paragraph));
+    }
+
+    public function test_missing_ancestor_renders_the_num_level_start_override(): void
+    {
+        $definitions = $this->numberingDefinitions()
+            ->withNum(new Num(1, abstractNumId: 10, levelOverrides: [0 => 5]));
+        $paragraph = $this->numberedParagraph(numId: 1, ilvl: 1);
+
+        $labels = (new NumberingEngine())->resolve(new Document(
+            content: [$paragraph],
+            numbering: $definitions,
+        ));
+
+        self::assertSame('5.1', $labels->labelFor($paragraph));
     }
 
     /**
