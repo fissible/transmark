@@ -307,6 +307,15 @@ against the implemented HTML and OOXML conventions.
 | 28 | `MarkdownReader`: soft breaks → space, hard breaks → LineBreak | XS | none | [#71](https://github.com/fissible/transmark/issues/71) | Done |
 | 29 | `HtmlWriter`/`MarkdownWriter`: list counters continue across interruptions via shared `NumberingLabelMap::counterFor()` | S | #6–#7, #12 | [#69](https://github.com/fissible/transmark/issues/69) | Done |
 | 30 | `DocxWriter`: rPr children in CT_RPr schema order (strike before u); O(n) relationship dedupe | XS | none | [#63](https://github.com/fissible/transmark/issues/63) | Done |
+| 31 | `DocxReader`: map `w:tab`, `w:cr`, `w:noBreakHyphen` run elements (word separation was destroyed) | XS | none | [#83](https://github.com/fissible/transmark/issues/83) | Done |
+| 32 | `DocxReader`: read `w:sdt` content controls and field-code hyperlinks, incl. controls wrapping table rows/cells and `w:fldSimple` | S | #83 | [#84](https://github.com/fissible/transmark/issues/84) | Done |
+| 33 | `MarkdownWriter`: escape leading list markers / block starts so paragraphs re-read as paragraphs | XS | none | [#85](https://github.com/fissible/transmark/issues/85) | Done |
+| 34 | `MarkdownWriter`: keep edge-whitespace inline formatting parseable (emphasis and code spans) | XS | none | [#86](https://github.com/fissible/transmark/issues/86) | Done |
+| 35 | `MarkdownReader`: raw HTML carried as `RawHtml` behind an opt-in; dropped by default so it cannot bypass HtmlWriter escaping | S | none | [#87](https://github.com/fissible/transmark/issues/87) | Done |
+| 36 | Table cell alignment preserved through the HTML leg (`HtmlWriter` emits, `HtmlReader` reads) | XS | none | [#88](https://github.com/fissible/transmark/issues/88) | Done |
+| 37 | `NumberingEngine`: render a not-yet-started ancestor counter as its start value instead of an empty segment | XS | none | [#89](https://github.com/fissible/transmark/issues/89) | Done |
+| 38 | `Attributes` id/class populated by `HtmlReader` and emitted by `HtmlWriter` (escaped) | S | none | [#90](https://github.com/fissible/transmark/issues/90) | Done |
+| 39 | `DocxReader`: read a monospaced run back as inline code so `Code` survives a DOCX round trip | XS | #6, #7 | — | Done |
 
 ## Session handoff notes
 
@@ -444,13 +453,36 @@ past the window restored the bypass), the relationship dedupe was left at
 O(n²), and the `numId` 0 fix had been written on the hyperlinks branch
 rather than the one that introduced the regression.
 
+**Completed (2026-08-27, fidelity wave #83–#90 + audit follow-ups):** eight
+issues (#83–#90) filed and fixed as PRs #91–#98, then audited. That audit
+found the issues sound but three fixes defective: PR #95's raw-HTML
+passthrough reopened the XSS hole v0.4.2 had closed (raw `<script>` and a
+`javascript:` href both reached the output), PR #92's field-code parser
+returned switch tokens like `\o` as the href and lost text around nested
+fields, and PR #91's leading tab turned a paragraph into a code block.
+Fixed in PRs #99–#100, with #103/#104 closing the rest: inline `Code` now
+survives a DOCX round trip, `w:sdt` controls wrapping a table row or cell
+are read, and `w:fldSimple` HYPERLINK fields become links.
+
 **Next task:** none currently scoped. Candidates, in rough priority order:
 a shared `Support\Uri` scheme policy — `uriScheme`/`isSafeLinkHref`/
 `isSafeImageSrc` are currently duplicated across `HtmlWriter`,
 `MarkdownWriter`, and `DocxWriter`, so the next allowlist change lands in
 three places; the test-corpus gap noted in the audit (no real-world Word
-files exercising ordinals/hyperlinks/omitted-ilvl end to end); and
-#31/#32-style roadmap work.
+files exercising ordinals/hyperlinks/omitted-ilvl end to end); table cells
+are the only nodes that do not round-trip `id`/`class`, since
+`HtmlReader::mapTableRow` and `HtmlWriter::renderTableCell` build their
+attributes by hand rather than via the #98 helpers; and #31/#32-style
+roadmap work.
+
+**Open questions carried forward, not blocking:** `NumberingEngine` fills a
+never-started ancestor from `w:lvlOverride/w:startOverride`, which
+LibreOffice does not do and ECMA-376 §17.9.9 does not clearly authorise —
+pinned by a test with no ground truth behind it, so re-derive it from real
+Word output before trusting it. `MarkdownReader` drops raw HTML by default,
+which is the secure choice but reintroduces the silent loss #87 was filed
+about; it is now declared via `assertExpectedLoss` rather than left
+implicit.
 
 **Known lossy cases accepted in this wave, not bugs:** a `w:hyperlink`
 carrying both `r:id` and `w:anchor` drops the fragment (ECMA-376 §17.16.22
@@ -459,9 +491,9 @@ separate fragments); a `lvlRestart="0"` level has no test in the
 simple-list path; and legal outlines lose depth in Markdown, which HTML
 still carries via `legal-level-N` classes.
 
-**Release decision:** v0.4.2 shipped (audit fix wave: XSS hardening for
-link/image URIs across all three writers, DOCX hyperlink reading incl.
-table cells, `numId` 0 handling, list-counter continuation, CT_RPr child
-ordering). No release currently pending.
+**Release decision:** v0.5.0 shipped — a minor rather than a patch because
+two features landed alongside the fixes: `Attributes` id/class now survive
+the HTML leg (#90), and `MarkdownReader` gained an `allowRawHtml` opt-in
+plus the `RawHtml` node (#87/#99). No release currently pending.
 
 **Blockers:** none.
